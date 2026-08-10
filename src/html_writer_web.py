@@ -1911,15 +1911,17 @@ function revealColumn(sid, col) {
   const table = document.getElementById('tbl-' + sid);
   if (!table) return;
   const wrap = table.closest('.tbl-wrap');
-  const head = table.querySelector('thead tr:last-child');
-  const th = head && head.cells[col];
-  if (!wrap || !th) return;
+  // 見出し行は rowspan で結合されたセルがあり cells[col] が列番号と
+  // ずれるため, 位置の基準には本文の1行目を使う
+  // (2026-08-10 客先指摘: 「1.出張実態」を押すと 2. の位置へ飛んでいた).
+  const body = table.querySelector('tbody tr');
+  const cell = body && body.cells[col];
+  if (!wrap || !cell) return;
 
   // 左に固定表示している列と重ならない位置へ寄せる
-  wrap.scrollTo({ left: Math.max(0, th.offsetLeft - 40), behavior: 'smooth' });
+  wrap.scrollTo({ left: Math.max(0, cell.offsetLeft - 40), behavior: 'smooth' });
 
   table.querySelectorAll('.col-focus').forEach(el => el.classList.remove('col-focus'));
-  th.classList.add('col-focus');
   table.querySelectorAll('tbody tr').forEach(tr => {
     if (tr.cells[col]) tr.cells[col].classList.add('col-focus');
   });
