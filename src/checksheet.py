@@ -752,21 +752,6 @@ def build_check_sheet(reports, employees, customers, approver_rules,
             ("承認ルート", cr_appr),
         ]
         spec_status = {ax: to_axis_vocab(ax, (cr.status if cr else OK)) for ax, cr in axes}
-
-        # 領収書確認の表示ラベル (01シート用).
-        # 2026-08-12 客先質問「乗車券(特急券と別売りの場合は領収書不要)が高額で
-        # 要確認になるとき, 理由を明示できないか」への対応. receipt.py は既に
-        # この明細を "免除対象だが高額・領収書なし" として区別しているため,
-        # 要確認の全明細がこのケースなら表示だけ「要確認：乗車券」に寄せる.
-        # spec_status["領収書"] 自体は総合判定/要確認項目の判定に使うため変更しない.
-        receipt_label = spec_status["領収書"]
-        if receipt_label == NEEDS_CHECK:
-            flagged_receipt_legs = cr_rcpt.evidence.get("flagged_legs", []) if cr_rcpt else []
-            if flagged_receipt_legs and all(
-                "免除対象だが高額" in f["reason"] for f in flagged_receipt_legs
-            ):
-                receipt_label = "要確認：乗車券"
-
         # 01_一次承認 の総合判定・要確認項目からは 承認ルート を除外する
         # (二次承認者向けの観点のため; 03_差異一覧/04_差戻し文面候補には引き続き含める).
         primary_axes = [(ax, cr) for ax, cr in axes if ax != "承認ルート"]
@@ -832,7 +817,7 @@ def build_check_sheet(reports, employees, customers, approver_rules,
             "合計金額": r.total_amount,
             "金額確認": spec_status["金額規程"],
             "二重申請確認": spec_status["二重申請"],
-            "証跡・領収書確認": receipt_label,
+            "証跡・領収書確認": spec_status["領収書"],
             "総合判定": overall,
             "要確認項目": "・".join(flagged_axes) if flagged_axes else "",
         }
