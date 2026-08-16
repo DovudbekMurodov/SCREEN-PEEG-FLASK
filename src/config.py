@@ -140,14 +140,14 @@ class Config:
         "SCREEN洛西", "洛西事業所", "SCREEN野洲", "野洲事業所", "野洲事務所",
     )
 
-    receipt_required_above: int | None = 1000    # 1,000円以上の非免除明細は領収書必須
+    receipt_required_above: int | None = 5000    # 5,000円以上の非免除明細は領収書必須
     receipt_exempt_transports: tuple = ("電車･ﾊﾞｽ",)  # IC/運賃系は領収書免除候補
     # 規程未提供時のフォールバック (旅費規定 入手後は receipt_required_above が優先):
     #   - high_value_provisional: 免除交通機関でもこの額以上・領収書なしは要確認
     #     (例: 新幹線相当の高額交通費の見逃し防止)
     #   - min_amount_to_flag: 非免除でもこの額未満は要確認にしない
     #     (宿泊税/駐車代等の少額付随費による過剰検知を抑制)
-    receipt_high_value_provisional: int = 10000
+    receipt_high_value_provisional: int = 5000
     receipt_min_amount_to_flag: int = 1000
     confirm_only_counts_as_approval: bool = False
 
