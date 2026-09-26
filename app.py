@@ -34,6 +34,20 @@ RUN_TIMEOUT_SECONDS = 300
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 64 * 1024 * 1024  # 64MB
 
+# --- 追加機能 (既存のチェックシート処理には影響しない) ---
+# 多言語化 (日本語=既定 / English / Oʻzbekcha) と、楽楽精算・楽楽勤怠 からの
+# データ自動ダウンロード (Playwright)。Playwright 未導入の環境でも既存機能が
+# 起動できるよう、Blueprint 登録は失敗しても無視する。
+import i18n as _i18n  # noqa: E402
+
+_i18n.init_app(app)
+try:
+    from rakuraku_web import bp as _rakuraku_bp  # noqa: E402
+
+    app.register_blueprint(_rakuraku_bp)
+except Exception:  # noqa: BLE001
+    app.logger.exception("楽楽ダウンロード機能を読み込めませんでした (既存機能は継続)")
+
 
 _approver_cache: list[str] | None = None
 

@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% block title %}{{ _("楽楽精算 データ出力") }}{% endblock %}
+{% block body %}
+<div class="rr">
+  <div class="wrap">
+    <header>
+      <h1>{{ _("楽楽精算 データ出力") }}</h1>
+      <p>{{ _("楽楽精算にログインして出張精算データ（CSV）を取得します。") }}</p>
+    </header>
+    <div class="card">
+      {% if error %}<div class="error">{{ error }}</div>{% endif %}
+      <div class="note">{{ _("認証情報はこの端末のブラウザにのみ保存されます。共有PCではご注意ください。") }}</div>
+
+      <form method="post" action="{{ url_for('rakuraku.seisan_run') }}" id="rr-form" data-store="seisan">
+        <div class="section">
+          <h2>{{ _("ログイン情報") }}</h2>
+          <div class="field">
+            <label class="lbl" for="s-login">{{ _("ログインID") }}</label>
+            <input type="text" id="s-login" name="login_id" autocomplete="off" spellcheck="false"
+                   data-rr-store="login_id" required />
+          </div>
+          <div class="field">
+            <label class="lbl" for="s-pass">{{ _("パスワード") }}</label>
+            <input type="password" id="s-pass" name="password" autocomplete="off"
+                   data-rr-store="password" data-rr-secret required />
+          </div>
+          <div class="field checks">
+            <label><input type="checkbox" id="rr-remember" checked /> {{ _("認証情報をこの端末に保存する") }}</label>
+            <button type="button" class="btn-ghost" id="rr-clear">{{ _("保存した認証情報を消去") }}</button>
+          </div>
+        </div>
+
+        <div class="section">
+          <h2>{{ _("出力条件") }}</h2>
+          <div class="field row2">
+            <div>
+              <label class="lbl" for="s-scope">{{ _("部門") }}</label>
+              <select id="s-scope" name="scope" data-rr-store="scope">
+                <option value="自部門">{{ _("自部門") }}</option>
+                <option value="全部門">{{ _("全部門") }}</option>
+              </select>
+            </div>
+            <div>
+              <label class="lbl" for="s-cat">{{ _("伝票種別") }}</label>
+              <input type="text" id="s-cat" name="category" value="出張精算(MEBA)" data-rr-store="category" />
+            </div>
+          </div>
+          <div class="field row2">
+            <div>
+              <label class="lbl" for="s-from">{{ _("申請日（開始）") }}</label>
+              <input type="date" id="s-from" name="applied_from" value="{{ applied_from }}" data-rr-store="applied_from" />
+            </div>
+            <div>
+              <label class="lbl" for="s-to">{{ _("申請日（終了）") }}</label>
+              <input type="date" id="s-to" name="applied_to" value="{{ applied_to }}" data-rr-store="applied_to" />
+            </div>
+          </div>
+          <div class="hint">{{ _("既定は実行日から1か月前まで。最大93日。") }}</div>
+          <div class="field" style="margin-top:16px">
+            <label class="lbl">{{ _("伝票状態") }}</label>
+            <div class="checks">
+              {% for s in statuses_all %}
+                <label><input type="checkbox" name="statuses" value="{{ s }}"
+                        {% if s in default_statuses %}checked{% endif %} data-rr-store="status_{{ s }}" /> {{ _(s) }}</label>
+              {% endfor %}
+            </div>
+          </div>
+        </div>
+
+        <div class="actions">
+          <button type="submit" id="rr-submit">{{ _("CSVを取得する") }}</button>
+        </div>
+      </form>
+      <div id="rr-flow" class="rr-flow" hidden
+           data-stream="{{ url_for('rakuraku.seisan_stream') }}"
+           data-t-running="{{ _('処理を実行しています…') }}"
+           data-t-done="{{ _('完了しました。ダウンロードします。') }}"
+           data-t-error="{{ _('エラーが発生しました。') }}"
+           data-t-elapsed="{{ _('経過 {s} 秒') }}">
+        <div class="rr-flow-status"></div>
+        <ol class="rr-steps"></ol>
+      </div>
+      <div class="note" style="margin-top:16px">{{ _("取得したCSVは、チェックシート作成画面でアップロードして使います。") }}</div>
+      <footer>{{ _("実行中に楽楽精算・楽楽勤怠へ手動でログインしていると、そちらがログアウトされる場合があります。") }}</footer>
+    </div>
+  </div>
+</div>
+<script src="{{ url_for('static', filename='rakuraku.js') }}" defer></script>
+{% endblock %}

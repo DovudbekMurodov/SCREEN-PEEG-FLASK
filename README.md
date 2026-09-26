@@ -147,3 +147,9 @@ cp <mms-project>/pdef/manual/japan.html static/manual/manual.html
 
 PDF は実行時に生成せず、あらかじめ作ったものを配信している
 （サーバ側に PDF 生成ライブラリを入れずに済むため）。
+
+## 楽楽精算・楽楽勤怠 自動ダウンロード (追加機能)
+
+ナビの「楽楽精算」「楽楽勤怠」から各システムにログインしてファイルを取得できます。
+サーバにデータは保存せず、認証情報はブラウザ (localStorage) のみに保存します。UIは日本語/English/Oʻzbekcha。
+詳細・PythonAnywhere (有料プラン必須) の設定は [docs/RAKURAKU.md](docs/RAKURAKU.md) を参照。

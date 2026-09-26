@@ -219,3 +219,6 @@ __marimo__/
 
 # Web アプリの作業フォルダ (実行時に生成)
 jobs/
+
+# 楽楽 デバッグ用DOMダンプ (RR_DEBUG_DUMP=1 の既定出力先)
+rakuraku_debug/

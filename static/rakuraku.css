@@ -1,0 +1,137 @@
+/* 楽楽精算/楽楽勤怠 ページ + 共通ナビ。既存 index.html の配色に合わせる。 */
+:root {
+  --navy: #1b2f6e; --navy-dk: #14245a; --accent: #3a5bc7;
+  --stripe: #f4f6fb; --border: #d0d8ec; --text: #1a1a2e; --muted: #5a6380;
+  --ok: #1a7a4a; --ok-bg: #e8f5ee; --warn: #b7720a; --warn-bg: #fff6e8;
+  --ng: #c0392b; --ng-bg: #fdecea; --gray: #6b7280; --gray-bg: #f1f2f4;
+  --radius: 8px;
+}
+* , *::before, *::after { box-sizing: border-box; }
+
+/* ---- top navigation (all pages) ---- */
+.topbar { background: var(--navy-dk); color: #fff; }
+.topbar-inner {
+  max-width: 960px; margin: 0 auto; padding: 0 16px;
+  display: flex; align-items: center; gap: 8px 20px; flex-wrap: wrap; min-height: 52px;
+}
+.topbar .brand {
+  font-weight: 700; font-size: 14.5px; color: #fff; text-decoration: none;
+  letter-spacing: .02em; margin-right: 8px;
+  font-family: "Hiragino Kaku Gothic ProN", "Yu Gothic", Meiryo, sans-serif;
+}
+.topbar .navlinks { display: flex; gap: 4px; flex: 1; flex-wrap: wrap; }
+.topbar .navlinks a {
+  color: rgba(255,255,255,.82); text-decoration: none; font-size: 13px; font-weight: 700;
+  padding: 7px 12px; border-radius: 6px; white-space: nowrap;
+}
+.topbar .navlinks a:hover { background: rgba(255,255,255,.12); color: #fff; }
+.topbar .navlinks a.active { background: rgba(255,255,255,.18); color: #fff; }
+.topbar .langswitch { display: flex; gap: 2px; border: 1px solid rgba(255,255,255,.28); border-radius: 6px; padding: 2px; }
+.topbar .langswitch a {
+  color: rgba(255,255,255,.8); text-decoration: none; font-size: 11.5px; font-weight: 700;
+  padding: 4px 8px; border-radius: 4px; white-space: nowrap;
+}
+.topbar .langswitch a:hover { background: rgba(255,255,255,.12); color: #fff; }
+.topbar .langswitch a.active { background: #fff; color: var(--navy-dk); }
+
+/* ---- rakuraku page shell ---- */
+.rr {
+  font-family: "Hiragino Kaku Gothic ProN", "Yu Gothic", Meiryo, sans-serif;
+  font-size: 14px; line-height: 1.7; color: var(--text);
+  background: var(--stripe); min-height: calc(100vh - 52px); padding: 32px 16px;
+}
+.rr .wrap { max-width: 760px; margin: 0 auto; }
+.rr header {
+  background: var(--navy); color: #fff; border-radius: var(--radius) var(--radius) 0 0; padding: 26px 32px;
+}
+.rr header h1 { font-size: 19px; font-weight: 700; letter-spacing: .02em; margin: 0; }
+.rr header p { font-size: 13px; color: rgba(255,255,255,.78); margin: 6px 0 0; }
+.rr .card {
+  background: #fff; border-radius: 0 0 var(--radius) var(--radius);
+  padding: 26px 32px 30px; box-shadow: 0 2px 12px rgba(27,47,110,.08);
+}
+.rr .section { margin-bottom: 24px; }
+.rr .section > h2 {
+  font-size: 13px; font-weight: 700; color: var(--navy-dk);
+  border-bottom: 1px solid var(--border); padding-bottom: 6px; margin: 0 0 14px;
+}
+.rr .field { margin-bottom: 18px; }
+.rr .field:last-child { margin-bottom: 0; }
+.rr label.lbl { display: block; font-weight: 700; font-size: 13px; color: var(--navy-dk); margin-bottom: 6px; }
+.rr .hint { font-size: 12px; color: var(--muted); margin: 6px 0 0; }
+.rr input[type=text], .rr input[type=password], .rr input[type=date], .rr select {
+  width: 100%; padding: 11px 13px; font-size: 14px; font-family: inherit;
+  border: 1px solid var(--border); border-radius: var(--radius); background: #fafbff; color: var(--text);
+}
+.rr input:focus, .rr select:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(58,91,199,.12); }
+.rr .row2 { display: flex; gap: 14px; flex-wrap: wrap; }
+.rr .row2 > * { flex: 1; min-width: 160px; }
+.rr .checks { display: flex; flex-wrap: wrap; gap: 8px 14px; }
+.rr .checks label { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer; }
+.rr .months label { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; cursor: pointer; margin-right: 18px; }
+.rr button {
+  width: 100%; padding: 14px; font-size: 15px; font-weight: 700; color: #fff;
+  background: var(--navy); border: none; border-radius: var(--radius); cursor: pointer; transition: background .15s;
+}
+.rr button:hover { background: var(--navy-dk); }
+.rr button:disabled { background: #9aa4bf; cursor: progress; }
+.rr .btn-ghost {
+  width: auto; background: transparent; color: var(--muted); border: 1px solid var(--border);
+  font-size: 12px; font-weight: 700; padding: 8px 14px;
+}
+.rr .btn-ghost:hover { background: #eef2ff; color: var(--navy-dk); }
+.rr .note, .rr .warn, .rr .error {
+  padding: 12px 16px; border-radius: 0 var(--radius) var(--radius) 0; font-size: 12.5px; margin-bottom: 20px;
+}
+.rr .note  { background: #f0f4ff; border-left: 3px solid var(--accent); color: var(--muted); }
+.rr .warn  { background: var(--warn-bg); border-left: 3px solid #d99a1f; color: #6b4e10; }
+.rr .error { background: var(--ng-bg); border-left: 3px solid var(--ng); color: #922b21; font-weight: 600; }
+.rr .actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; border-top: 1px solid var(--border); padding-top: 20px; }
+.rr .actions button[type=submit] { flex: 1; min-width: 200px; }
+.rr .spinner { display: none; text-align: center; padding: 16px; color: var(--muted); font-size: 13px; }
+.rr .spinner.on { display: block; }
+.rr .spinner::before {
+  content: ""; display: inline-block; width: 16px; height: 16px; margin-right: 8px; vertical-align: -3px;
+  border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: rrspin .8s linear infinite;
+}
+@keyframes rrspin { to { transform: rotate(360deg); } }
+.rr footer { text-align: center; font-size: 11.5px; color: var(--muted); margin-top: 18px; }
+
+/* ---- live step flow ---- */
+.rr-flow { margin-top: 22px; border-top: 1px solid var(--border); padding-top: 18px; }
+.rr-flow-status { font-size: 13px; font-weight: 700; color: var(--ink, var(--navy-dk)); margin-bottom: 14px; min-height: 20px; }
+.rr-flow.rr-has-error .rr-flow-status { color: var(--ng); }
+.rr-steps { list-style: none; margin: 0; padding: 0; }
+.rr-step {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; padding: 9px 0; font-size: 14px;
+  color: var(--muted); animation: rr-fade .2s ease both;
+}
+.rr-step-label { flex: 1 1 auto; }
+/* 詳細 (進捗・スキップ理由) はラベルを潰さないよう、マーク幅ぶん字下げして次の行に置く */
+.rr-step-detail { flex-basis: 100%; padding-left: 34px; font-size: 12px; color: var(--muted); }
+.rr-step.rr-running { color: var(--navy-dk); font-weight: 700; }
+.rr-step.rr-done { color: var(--text); }
+.rr-step.rr-failed { color: var(--ng); font-weight: 700; }
+.rr-step.rr-skipped { color: #6b4e10; }
+.rr-step.rr-skipped .rr-step-detail { color: #6b4e10; }
+.rr-mark {
+  flex-shrink: 0; width: 22px; height: 22px; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 700; line-height: 1;
+}
+/* 状態の見た目は必ず .rr-mark(丸)だけに適用する。<li> も rr-done 等の
+   クラスを持つため、素の .rr-done/.rr-running を使うと行全体が緑/回転する。 */
+.rr-mark.rr-pending { border: 2px solid var(--border); background: #fff; }
+.rr-mark.rr-done { background: var(--ok); color: #fff; }
+.rr-mark.rr-failed { background: var(--ng); color: #fff; }
+.rr-mark.rr-skipped { background: var(--warn); color: #fff; }
+.rr-mark.rr-running {
+  border: 2px solid var(--border); border-top-color: var(--accent);
+  background: #fff; animation: rr-spin .8s linear infinite;
+}
+@keyframes rr-spin { to { transform: rotate(360deg); } }
+@keyframes rr-fade { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  .rr-mark.rr-running { animation: none; }
+  .rr-step { animation: none; }
+}

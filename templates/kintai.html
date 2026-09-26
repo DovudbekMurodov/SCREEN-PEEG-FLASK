@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block title %}{{ _("楽楽勤怠 データ出力") }}{% endblock %}
+{% block body %}
+<div class="rr">
+  <div class="wrap">
+    <header>
+      <h1>{{ _("楽楽勤怠 データ出力") }}</h1>
+      <p>{{ _("楽楽勤怠にログインして出勤簿（日別詳細）を取得します。") }}</p>
+    </header>
+    <div class="card">
+      {% if error %}<div class="error">{{ error }}</div>{% endif %}
+      <div class="note">{{ _("認証情報はこの端末のブラウザにのみ保存されます。共有PCではご注意ください。") }}</div>
+
+      <form method="post" action="{{ url_for('rakuraku.kintai_run') }}" id="rr-form" data-store="kintai">
+        <div class="section">
+          <h2>{{ _("ログイン情報") }}</h2>
+          <div class="field">
+            <label class="lbl" for="k-cid">{{ _("お客様ID") }}</label>
+            <input type="text" id="k-cid" name="company_code" value="{{ company_default }}"
+                   autocomplete="off" spellcheck="false" data-rr-store="company_code" required />
+          </div>
+          <div class="field">
+            <label class="lbl" for="k-login">{{ _("ログインID") }}</label>
+            <input type="text" id="k-login" name="login_id" autocomplete="off" spellcheck="false"
+                   data-rr-store="login_id" required />
+          </div>
+          <div class="field">
+            <label class="lbl" for="k-pass">{{ _("パスワード") }}</label>
+            <input type="password" id="k-pass" name="password" autocomplete="off"
+                   data-rr-store="password" data-rr-secret required />
+          </div>
+          <div class="field checks">
+            <label><input type="checkbox" id="rr-remember" checked /> {{ _("認証情報をこの端末に保存する") }}</label>
+            <button type="button" class="btn-ghost" id="rr-clear">{{ _("保存した認証情報を消去") }}</button>
+          </div>
+        </div>
+
+        <div class="section">
+          <h2>{{ _("出力条件") }}</h2>
+          <div class="field months">
+            <label class="lbl">{{ _("対象月") }}</label>
+            {% for ym in months_default %}
+              <label><input type="checkbox" name="months" value="{{ ym }}" checked data-rr-store="month_{{ ym }}" />
+                {{ ym }}{% if ym == this_month %}（{{ _("今月") }}）{% else %}（{{ _("先月") }}）{% endif %}</label>
+            {% endfor %}
+          </div>
+          <div class="hint">{{ _("複数月を選ぶと時間がかかります。時間切れになる場合は1か月ずつお試しください。") }}</div>
+        </div>
+
+        <div class="actions">
+          <button type="submit" id="rr-submit">{{ _("出勤簿を取得する") }}</button>
+        </div>
+      </form>
+      <div id="rr-flow" class="rr-flow" hidden
+           data-stream="{{ url_for('rakuraku.kintai_stream') }}"
+           data-t-running="{{ _('処理を実行しています…') }}"
+           data-t-done="{{ _('完了しました。ダウンロードします。') }}"
+           data-t-error="{{ _('エラーが発生しました。') }}"
+           data-t-elapsed="{{ _('経過 {s} 秒') }}">
+        <div class="rr-flow-status"></div>
+        <ol class="rr-steps"></ol>
+      </div>
+      <div class="note" style="margin-top:16px">{{ _("取得した出勤簿は、チェックシート作成画面でアップロードして使います。") }}</div>
+      <footer>{{ _("実行中に楽楽精算・楽楽勤怠へ手動でログインしていると、そちらがログアウトされる場合があります。") }}</footer>
+    </div>
+  </div>
+</div>
+<script src="{{ url_for('static', filename='rakuraku.js') }}" defer></script>
+{% endblock %}

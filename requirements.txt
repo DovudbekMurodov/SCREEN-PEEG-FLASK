@@ -3,3 +3,5 @@ gunicorn>=21.2
 openpyxl>=3.1
 msoffcrypto-tool>=5.1
 rapidfuzz>=3.0
+# 楽楽精算/楽楽勤怠 の自動ダウンロード用 (PythonAnywhere は有料プラン + /usr/bin/chromium)
+playwright>=1.40

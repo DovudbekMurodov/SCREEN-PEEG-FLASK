@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="{{ lang }}">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>{% block title %}{{ _("出張精算 チェックシート") }}{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='rakuraku.css') }}" />
+    {% block head %}{% endblock %}
+  </head>
+  <body>
+    <nav class="topbar">
+      <div class="topbar-inner">
+        <a class="brand" href="/">{{ _("出張精算 チェックシート") }}</a>
+        <div class="navlinks">
+          <a href="/" class="{% if request.path == '/' %}active{% endif %}">{{ _("チェックシート") }}</a>
+          <a href="/seisan" class="{% if request.path.startswith('/seisan') %}active{% endif %}">{{ _("楽楽精算") }}</a>
+          <a href="/kintai" class="{% if request.path.startswith('/kintai') %}active{% endif %}">{{ _("楽楽勤怠") }}</a>
+        </div>
+        <div class="langswitch" role="group" aria-label="{{ _('表示言語') }}">
+          {% for code, label in languages %}
+            <a href="/lang/{{ code }}?next={{ current_url|urlencode }}" hreflang="{{ code }}"
+               class="{% if code == lang %}active{% endif %}"{% if code == lang %} aria-current="true"{% endif %}>{{ label }}</a>
+          {% endfor %}
+        </div>
+      </div>
+    </nav>
+    {% block body %}{% endblock %}
+  </body>
+</html>
