@@ -5,7 +5,11 @@ import re
 import time
 import unicodedata
 
-from playwright.sync_api import Error as PlaywrightError
+try:
+    from playwright.sync_api import Error as PlaywrightError
+except ImportError:  # playwright 未インストール (無料プラン等) でも Blueprint を登録できるようにする
+    class PlaywrightError(Exception):  # type: ignore[no-redef]
+        pass
 
 from rakuraku.errors import ForbiddenActionBlocked, SelectorNotFound
 

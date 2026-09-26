@@ -6,7 +6,10 @@ import re
 import tempfile
 import time
 
-from playwright.sync_api import Error as PlaywrightError
+try:
+    from playwright.sync_api import Error as PlaywrightError
+except ImportError:  # playwright 未インストールでも import 可能にする (実行時は playwright_available で拒否)
+    from rakuraku.locators import PlaywrightError  # type: ignore[assignment]
 
 from rakuraku import selectors as sel
 from rakuraku.errors import (

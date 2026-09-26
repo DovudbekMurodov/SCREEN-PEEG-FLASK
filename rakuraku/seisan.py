@@ -4,8 +4,14 @@ from __future__ import annotations
 import os
 import tempfile
 
-from playwright.sync_api import Error as PlaywrightError
-from playwright.sync_api import TimeoutError as PWTimeout
+try:
+    from playwright.sync_api import Error as PlaywrightError
+    from playwright.sync_api import TimeoutError as PWTimeout
+except ImportError:  # playwright 未インストールでも import 可能にする (実行時は playwright_available で拒否)
+    from rakuraku.locators import PlaywrightError  # type: ignore[assignment]
+
+    class PWTimeout(PlaywrightError):  # type: ignore[no-redef]
+        pass
 
 from rakuraku import selectors as sel
 from rakuraku.errors import (
