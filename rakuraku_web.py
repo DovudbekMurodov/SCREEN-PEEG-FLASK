@@ -30,6 +30,7 @@ from rakuraku.oneclick import (
     run_engine,
 )
 from rakuraku.params import (
+    SCOPES,
     KintaiParams,
     ParamError,
     STATUS_ALL,
@@ -339,6 +340,7 @@ def oneclick_page():
         "oneclick.html", error=None, company_default=KINTAI_COMPANY_DEFAULT,
         applied_from=dfrom.isoformat(), applied_to=dto.isoformat(),
         approvers=engine.approvers() if engine else [], max_months=ONECLICK_MAX_MONTHS,
+        scopes=SCOPES, statuses_all=STATUS_ALL, default_statuses=["承認依頼中"],
     )
 
 

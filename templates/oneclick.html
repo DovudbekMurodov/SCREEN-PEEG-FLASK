@@ -54,28 +54,60 @@
           </div>
         </div>
 
-        <div class="section">
-          <h2>{{ _("作成条件") }}</h2>
-          <div class="field row2">
-            <div>
-              <label class="lbl" for="o-from">{{ _("申請日（開始）") }}</label>
-              <input type="date" id="o-from" name="s_applied_from" value="{{ applied_from }}" />
+        {# 詳細設定: 開かなければ既定の条件で実行する。ここの値は保存しない (毎回既定に戻る)。 #}
+        <details class="rr-details">
+          <summary>
+            <span class="rr-details-title">{{ _("詳細設定") }}</span>
+            <span class="rr-details-hint">{{ _("開かずに実行すると、既定の条件（自部門・出張精算(MEBA)・直近1か月・承認依頼中・全員）で作成します。") }}</span>
+          </summary>
+          <div class="rr-details-body">
+            <h3>{{ _("楽楽精算の出力条件") }}</h3>
+            <div class="field row2">
+              <div>
+                <label class="lbl" for="o-scope">{{ _("部門") }}</label>
+                <select id="o-scope" name="s_scope">
+                  {% for sc in scopes %}<option value="{{ sc }}">{{ _(sc) }}</option>{% endfor %}
+                </select>
+              </div>
+              <div>
+                <label class="lbl" for="o-cat">{{ _("伝票種別") }}</label>
+                <input type="text" id="o-cat" name="s_category" value="出張精算(MEBA)" />
+              </div>
             </div>
-            <div>
-              <label class="lbl" for="o-to">{{ _("申請日（終了）") }}</label>
-              <input type="date" id="o-to" name="s_applied_to" value="{{ applied_to }}" />
+            <div class="field row2">
+              <div>
+                <label class="lbl" for="o-from">{{ _("申請日（開始）") }}</label>
+                <input type="date" id="o-from" name="s_applied_from" value="{{ applied_from }}" />
+              </div>
+              <div>
+                <label class="lbl" for="o-to">{{ _("申請日（終了）") }}</label>
+                <input type="date" id="o-to" name="s_applied_to" value="{{ applied_to }}" />
+              </div>
+            </div>
+            <div class="hint">{{ _("既定は実行日から1か月前まで。最大93日。") }}</div>
+            <div class="field" style="margin-top:14px">
+              <label class="lbl">{{ _("伝票状態") }}</label>
+              <div class="checks">
+                {% for s in statuses_all %}
+                  <label><input type="checkbox" name="s_statuses" value="{{ s }}"
+                          {% if s in default_statuses %}checked{% endif %} /> {{ _(s) }}</label>
+                {% endfor %}
+              </div>
+            </div>
+
+            <h3>{{ _("楽楽勤怠") }}</h3>
+            <div class="hint">{{ _("出勤簿は、当月と前月の2か月分を必ず取得し、出張精算データの明細日付にそれより前の月があれば追加で取得します（最大{n}か月）。", n=max_months) }}</div>
+
+            <h3>{{ _("チェックシート") }}</h3>
+            <div class="field">
+              <label class="lbl" for="o-approver">{{ _("対象者（承認実行者）") }}</label>
+              <select id="o-approver" name="approver">
+                <option value="">{{ _("全員（絞り込みなし）") }}</option>
+                {% for name in approvers %}<option value="{{ name }}">{{ name }}</option>{% endfor %}
+              </select>
             </div>
           </div>
-          <div class="hint">{{ _("既定は実行日から1か月前まで。最大93日。") }}</div>
-          <div class="field" style="margin-top:14px">
-            <label class="lbl" for="o-approver">{{ _("対象者（承認実行者）") }}</label>
-            <select id="o-approver" name="approver" data-rr-store="approver">
-              <option value="">{{ _("全員（絞り込みなし）") }}</option>
-              {% for name in approvers %}<option value="{{ name }}">{{ name }}</option>{% endfor %}
-            </select>
-          </div>
-          <div class="hint">{{ _("出勤簿は、当月と前月の2か月分を必ず取得し、出張精算データの明細日付にそれより前の月があれば追加で取得します（最大{n}か月）。", n=max_months) }}</div>
-        </div>
+        </details>
 
         <div class="actions">
           <button type="submit" id="rr-submit">{{ _("ワンクリックで実行") }}</button>

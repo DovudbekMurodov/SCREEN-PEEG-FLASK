@@ -257,8 +257,29 @@ def test_oneclick_param_error_and_unknown_approver(client, fake_clients):
     assert [d for e, d in events if e == "result"][0]["approver"] == "全員（絞り込みなし）"
 
 
+def test_oneclick_advanced_settings_are_sent_to_seisan(client, fake_clients):
+    form = dict(FORM, s_scope="全部門", s_category="出張精算(MEBA)", s_applied_from="2026-09-01",
+                s_applied_to="2026-09-20", s_statuses=["差戻し", "否認"])
+    events = sse_events(client.post("/oneclick/stream", data=form).get_data(as_text=True))
+    assert "error" not in [e for e, _ in events]
+    p = _FakeSeisan.calls[0]
+    assert (p.scope, p.statuses) == ("全部門", ["差戻し", "否認"])
+    assert (p.applied_from, p.applied_to) == (dt.date(2026, 9, 1), dt.date(2026, 9, 20))
+
+
+def test_oneclick_defaults_when_advanced_settings_untouched(client, fake_clients):
+    sse_events(client.post("/oneclick/stream", data=dict(FORM, s_statuses="承認依頼中")).get_data(as_text=True))
+    p = _FakeSeisan.calls[0]
+    assert (p.scope, p.category, p.statuses) == ("自部門", "出張精算(MEBA)", ["承認依頼中"])
+
+
 def test_oneclick_page_renders_with_shared_credential_keys(client):
     body = client.get("/oneclick").get_data(as_text=True)
     assert 'data-rr-ns="seisan" data-rr-store="login_id"' in body
     assert 'data-rr-ns="kintai" data-rr-store="password"' in body
     assert 'href="/oneclick"' in client.get("/").get_data(as_text=True)  # 一番目のメニュー + 案内
+    # 詳細設定は閉じた状態で表示し、既定値 (承認依頼中) が選ばれている
+    assert '<details class="rr-details">' in body
+    assert re.search(r'name="s_statuses" value="承認依頼中"\s+checked', body)
+    # 表示言語はドロップダウン
+    assert re.search(r'<select aria-label="[^"]+" onchange=', body) and "/lang/uz?next=" in body

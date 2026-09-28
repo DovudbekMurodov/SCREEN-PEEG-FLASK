@@ -26,7 +26,16 @@
 }
 .topbar .navlinks a:hover { background: rgba(255,255,255,.12); color: #fff; }
 .topbar .navlinks a.active { background: rgba(255,255,255,.18); color: #fff; }
-.topbar .langswitch { display: flex; gap: 2px; border: 1px solid rgba(255,255,255,.28); border-radius: 6px; padding: 2px; }
+.topbar .langswitch select {
+  -webkit-appearance: none; appearance: none; cursor: pointer; font-family: inherit;
+  font-size: 12.5px; font-weight: 700; color: #fff; padding: 6px 30px 6px 12px;
+  border: 1px solid rgba(255,255,255,.35); border-radius: 6px;
+  background: transparent url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23fff' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") no-repeat right 11px center;
+}
+.topbar .langswitch select:hover { background-color: rgba(255,255,255,.12); }
+.topbar .langswitch select:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+.topbar .langswitch option { color: #1a1a2e; background: #fff; }
+.topbar .langswitch noscript a { margin-left: 8px; }
 .topbar .langswitch a {
   color: rgba(255,255,255,.8); text-decoration: none; font-size: 11.5px; font-weight: 700;
   padding: 4px 8px; border-radius: 4px; white-space: nowrap;
@@ -180,3 +189,24 @@
 .oc-banner b { font-size: 14px; }
 .oc-banner span { flex: 1; min-width: 200px; color: #43507a; }
 .oc-banner em { font-style: normal; font-weight: 700; white-space: nowrap; }
+
+/* ---- ワンクリック実行: 詳細設定 (開かなければ既定の条件) ---- */
+.rr-details { border: 1px solid var(--border); border-radius: var(--radius); background: #fafbff; margin-bottom: 24px; }
+.rr-details > summary {
+  cursor: pointer; list-style: none; position: relative; display: flex; flex-direction: column; gap: 3px;
+  padding: 14px 44px 14px 16px; border-radius: var(--radius);
+}
+.rr-details > summary::-webkit-details-marker { display: none; }
+.rr-details > summary::after {
+  content: ""; position: absolute; right: 18px; top: 50%; width: 8px; height: 8px;
+  border-right: 2px solid var(--muted); border-bottom: 2px solid var(--muted);
+  transform: translateY(-70%) rotate(45deg); transition: transform .15s;
+}
+.rr-details[open] > summary::after { transform: translateY(-25%) rotate(-135deg); }
+.rr-details > summary:hover { background: #f0f4ff; }
+.rr-details > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.rr-details-title { font-size: 13.5px; font-weight: 700; color: var(--navy-dk); }
+.rr-details-hint { font-size: 12px; color: var(--muted); }
+.rr-details-body { padding: 2px 16px 18px; border-top: 1px solid var(--border); }
+.rr-details-body h3 { font-size: 12.5px; font-weight: 700; color: var(--navy-dk); margin: 16px 0 10px; }
+@media (prefers-reduced-motion: reduce) { .rr-details > summary::after { transition: none; } }
