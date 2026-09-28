@@ -99,3 +99,40 @@ def test_kintai_stream_all_months_empty_is_error(client, wired):
     assert "event: error" in body
     assert "選択した月の出勤簿データがありませんでした" in body
     assert "event: file" not in body
+
+
+# ---------------------------------------------------------------- ワンクリック実行 (実ブラウザ + 擬似サイト + 実エンジン)
+ONECLICK_FORM = {"s_login_id": "AZ999999", "s_password": "seisan-pass", "k_company_code": "PEEG",
+                 "k_login_id": "AZ999999", "k_password": "kintai-pass"}
+
+
+def test_oneclick_stream_end_to_end(client, wired):
+    from tests.test_oneclick import _attendance_count, sse_events
+
+    events = sse_events(client.post("/oneclick/stream", data=ONECLICK_FORM).get_data(as_text=True))
+    assert "error" not in [e for e, _ in events], events
+    result = [d for e, d in events if e == "result"][0]
+    names = [f["filename"] for f in result["files"]]
+    assert any(n.endswith(".xlsx") for n in names) and any(n.endswith("_ja.html") for n in names)
+    assert _attendance_count(result["log"]) == 61  # 擬似サイトの 2026-09 + 2026-08 が読めている
+    assert wired.state["seisan_logins"] == 1 and wired.state["kintai_logins"] == 1
+    assert wired.state["forbidden"] == []
+
+
+def test_oneclick_stream_skips_empty_month(client, wired):
+    from tests.test_oneclick import sse_events
+
+    wired.state["empty_months"].append("2026-08")
+    events = sse_events(client.post("/oneclick/stream", data=ONECLICK_FORM).get_data(as_text=True))
+    result = [d for e, d in events if e == "result"][0]
+    assert result["skipped"] == ["2026-08"]
+    assert {"key": "k:export:2026-08", "status": "skipped"}.items() <= [
+        d for e, d in events if e == "step" and d["key"] == "k:export:2026-08"][-1].items()
+
+
+def test_oneclick_stream_all_months_empty_is_error(client, wired):
+    from tests.test_oneclick import sse_events
+
+    wired.state["empty_months"].extend(["2026-09", "2026-08"])
+    events = sse_events(client.post("/oneclick/stream", data=ONECLICK_FORM).get_data(as_text=True))
+    assert events[-1][0] == "error" and "result" not in [e for e, _ in events]

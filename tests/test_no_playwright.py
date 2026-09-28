@@ -20,6 +20,9 @@ r = c.post("/kintai/run", data={"company_code": "PEEG", "login_id": "a", "passwo
 assert r.status_code == 503 and "有料プラン" in r.get_data(as_text=True), (r.status_code, r.get_data(as_text=True)[:200])
 r = c.post("/seisan/stream", data={"login_id": "a", "password": "b"})
 assert "有料プラン" in r.get_data(as_text=True)
+assert c.get("/oneclick").status_code == 200, "oneclick page must render"
+r = c.post("/oneclick/stream", data={"s_login_id": "a", "s_password": "b", "k_company_code": "P", "k_login_id": "a", "k_password": "b"})
+assert "有料プラン" in r.get_data(as_text=True)
 print("OK")
 """
 

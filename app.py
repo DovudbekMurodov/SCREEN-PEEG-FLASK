@@ -238,6 +238,8 @@ def run():
         fixed = "出勤簿_" + att_name
         os.rename(os.path.join(work, "attendance", att_name),
                   os.path.join(work, "attendance", fixed))
+        att_name = fixed
+    _normalize_attendance(os.path.join(work, "attendance", att_name))
 
     try:
         proc = _run_checksheet(work, approver)
@@ -376,6 +378,33 @@ def manual_download(kind: str):
 @app.get("/healthz")
 def healthz():
     return {"status": "ok"}
+
+
+def _normalize_attendance(path: str) -> None:
+    """楽楽勤怠の「出勤簿（日別詳細）」をエンジンが読める形に整える (追加機能).
+
+    そのままだとヘッダが3行目・時刻が 'HH:MM' 文字列のため、エンジンが1行も
+    読めず全件「未確認（勤怠データ欠落）」になる。既にエンジン形式のファイルは
+    変更しない。整形に失敗した場合は元のファイルのまま処理を続ける。
+    """
+    try:
+        from rakuraku.oneclick import normalize_attendance_file
+
+        normalize_attendance_file(path)
+    except Exception:  # noqa: BLE001
+        app.logger.exception("出勤簿の整形に失敗しました (元のファイルで続行)")
+
+
+# ワンクリック実行 (楽楽精算 → 楽楽勤怠 → チェックシート) の Blueprint が、
+# 既存のチェックシート処理をそのまま呼ぶための入口。循環 import を避けるため
+# 関数を渡すだけで、既存の処理内容は変えない。
+from types import SimpleNamespace  # noqa: E402
+
+app.config["CHECKSHEET_ENGINE"] = SimpleNamespace(
+    prepare=_prepare_workspace, python=_python_executable, src_dir=SRC_DIR,
+    timeout=RUN_TIMEOUT_SECONDS, results=_result_files, clean_log=_clean_log,
+    summary=_parse_summary, approvers=_approver_choices,
+)
 
 
 if __name__ == "__main__":

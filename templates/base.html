@@ -12,6 +12,7 @@
       <div class="topbar-inner">
         <a class="brand" href="/">{{ _("出張精算 チェックシート") }}</a>
         <div class="navlinks">
+          <a href="/oneclick" class="{% if request.path.startswith('/oneclick') %}active{% endif %}">{{ _("ワンクリック実行") }}</a>
           <a href="/" class="{% if request.path == '/' %}active{% endif %}">{{ _("チェックシート") }}</a>
           <a href="/seisan" class="{% if request.path.startswith('/seisan') %}active{% endif %}">{{ _("楽楽精算") }}</a>
           <a href="/kintai" class="{% if request.path.startswith('/kintai') %}active{% endif %}">{{ _("楽楽勤怠") }}</a>

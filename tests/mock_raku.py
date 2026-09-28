@@ -11,6 +11,8 @@ from wsgiref.simple_server import make_server
 from flask import Flask, Response, redirect, request
 from openpyxl import Workbook
 
+from tests.oneclick_fixtures import attendance_xlsx_bytes, expense_csv_bytes
+
 def _cd(name, ascii_fallback):
     return "attachment; filename=%s; filename*=UTF-8''%s" % (ascii_fallback, quote(name))
 
@@ -24,6 +26,10 @@ KINTAI_PASSWORD = "kintai-pass"
 
 
 def _csv_bytes():
+    return expense_csv_bytes()
+
+
+def _csv_bytes_simple():
     header = (
         "ヘッダ情報:伝票No.(伝票No.),明細情報:明細日付(日付),明細情報:出発地(出発),"
         "明細情報:到着地(到着),明細情報:金額(金額)"
@@ -33,6 +39,10 @@ def _csv_bytes():
 
 
 def _xlsx_bytes(ym):
+    return attendance_xlsx_bytes(ym)
+
+
+def _xlsx_bytes_simple(ym):
     wb = Workbook()
     ws = wb.active
     ws.title = "一般"

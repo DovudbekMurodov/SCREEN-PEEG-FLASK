@@ -78,3 +78,13 @@ class PlaywrightUnavailable(RakuError):
         "この機能はサーバ側でブラウザを実行するため、有料プラン（Playwright対応の環境）が必要です。"
         "無料プランでは楽楽精算・楽楽勤怠へ接続できません。"
     )
+
+
+class CheckSheetFailed(RakuError):
+    code = "CHECKSHEET_FAILED"
+    user_message = "チェックシートの作成中にエラーが発生しました。"
+
+    def __init__(self, detail="", service=None, user_message=None, log=""):
+        # type: (str, str | None, str | None, str) -> None
+        self.log = log  # 画面の「実行ログ」に出す (サーバ内部のパスは除去済み)
+        super().__init__(detail, service=service, user_message=user_message)

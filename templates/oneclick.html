@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+{% block title %}{{ _("ワンクリック実行") }}{% endblock %}
+{% block body %}
+<div class="rr">
+  <div class="wrap">
+    <header>
+      <h1>{{ _("ワンクリック実行") }}</h1>
+      <p>{{ _("楽楽精算・楽楽勤怠からデータを取得し、そのままチェックシートを作成します。") }}</p>
+    </header>
+    <div class="card">
+      {% if error %}<div class="error">{{ error }}</div>{% endif %}
+      <div class="note">{{ _("認証情報はこの端末のブラウザにのみ保存されます。共有PCではご注意ください。") }}</div>
+
+      {# 認証情報は /seisan・/kintai 画面と同じ保存先 (data-rr-ns) を使うので、どちらで保存しても共有される #}
+      <form method="post" action="{{ url_for('rakuraku.oneclick_stream') }}" id="rr-form" data-store="oneclick">
+        <div class="section">
+          <h2>{{ _("楽楽精算のログイン情報") }}</h2>
+          <div class="field row2">
+            <div>
+              <label class="lbl" for="o-s-login">{{ _("ログインID") }}</label>
+              <input type="text" id="o-s-login" name="s_login_id" autocomplete="off" spellcheck="false"
+                     data-rr-ns="seisan" data-rr-store="login_id" required />
+            </div>
+            <div>
+              <label class="lbl" for="o-s-pass">{{ _("パスワード") }}</label>
+              <input type="password" id="o-s-pass" name="s_password" autocomplete="off"
+                     data-rr-ns="seisan" data-rr-store="password" data-rr-secret required />
+            </div>
+          </div>
+        </div>
+
+        <div class="section">
+          <h2>{{ _("楽楽勤怠のログイン情報") }}</h2>
+          <div class="field">
+            <label class="lbl" for="o-k-cid">{{ _("お客様ID") }}</label>
+            <input type="text" id="o-k-cid" name="k_company_code" value="{{ company_default }}" autocomplete="off"
+                   spellcheck="false" data-rr-ns="kintai" data-rr-store="company_code" required />
+          </div>
+          <div class="field row2">
+            <div>
+              <label class="lbl" for="o-k-login">{{ _("ログインID") }}</label>
+              <input type="text" id="o-k-login" name="k_login_id" autocomplete="off" spellcheck="false"
+                     data-rr-ns="kintai" data-rr-store="login_id" required />
+            </div>
+            <div>
+              <label class="lbl" for="o-k-pass">{{ _("パスワード") }}</label>
+              <input type="password" id="o-k-pass" name="k_password" autocomplete="off"
+                     data-rr-ns="kintai" data-rr-store="password" data-rr-secret required />
+            </div>
+          </div>
+          <div class="field checks">
+            <label><input type="checkbox" id="rr-remember" checked /> {{ _("認証情報をこの端末に保存する") }}</label>
+            <button type="button" class="btn-ghost" id="rr-clear">{{ _("保存した認証情報を消去") }}</button>
+          </div>
+        </div>
+
+        <div class="section">
+          <h2>{{ _("作成条件") }}</h2>
+          <div class="field row2">
+            <div>
+              <label class="lbl" for="o-from">{{ _("申請日（開始）") }}</label>
+              <input type="date" id="o-from" name="s_applied_from" value="{{ applied_from }}" />
+            </div>
+            <div>
+              <label class="lbl" for="o-to">{{ _("申請日（終了）") }}</label>
+              <input type="date" id="o-to" name="s_applied_to" value="{{ applied_to }}" />
+            </div>
+          </div>
+          <div class="hint">{{ _("既定は実行日から1か月前まで。最大93日。") }}</div>
+          <div class="field" style="margin-top:14px">
+            <label class="lbl" for="o-approver">{{ _("対象者（承認実行者）") }}</label>
+            <select id="o-approver" name="approver" data-rr-store="approver">
+              <option value="">{{ _("全員（絞り込みなし）") }}</option>
+              {% for name in approvers %}<option value="{{ name }}">{{ name }}</option>{% endfor %}
+            </select>
+          </div>
+          <div class="hint">{{ _("出勤簿は、取得した出張精算データの明細日付から必要な月を自動で判断して取得します（最大{n}か月）。", n=max_months) }}</div>
+        </div>
+
+        <div class="actions">
+          <button type="submit" id="rr-submit">{{ _("ワンクリックで実行") }}</button>
+        </div>
+        <div class="hint" style="margin-top:8px">{{ _("所要時間の目安は1〜3分です。画面を閉じずにお待ちください。") }}</div>
+      </form>
+
+      <div id="rr-flow" class="rr-flow" hidden
+           data-stream="{{ url_for('rakuraku.oneclick_stream') }}"
+           data-t-running="{{ _('処理を実行しています…') }}"
+           data-t-done="{{ _('チェックシートを作成しました。') }}"
+           data-t-error="{{ _('エラーが発生しました。') }}"
+           data-t-elapsed="{{ _('経過 {s} 秒') }}">
+        <div class="rr-flow-status"></div>
+        <ol class="rr-steps"></ol>
+      </div>
+
+      <div id="rr-result" class="rr-result" hidden
+           data-t-approver="{{ _('対象者：') }}"
+           data-t-files="{{ _('チェックシート') }}"
+           data-t-open="{{ _('HTMLレポートを開く') }}"
+           data-t-sources="{{ _('取得した元データ') }}"
+           data-t-log="{{ _('実行ログを表示') }}"
+           data-t-skipped="{{ _('出勤簿データが無くスキップした月：{months}') }}"
+           data-t-dropped="{{ _('対象月が多いため取得しなかった月：{months}（該当する申請は未確認になります）') }}"></div>
+
+      <footer>{{ _("実行中に楽楽精算・楽楽勤怠へ手動でログインしていると、そちらがログアウトされる場合があります。") }}</footer>
+    </div>
+  </div>
+</div>
+<script src="{{ url_for('static', filename='rakuraku.js') }}" defer></script>
+{% endblock %}
