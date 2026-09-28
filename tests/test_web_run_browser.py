@@ -106,7 +106,8 @@ ONECLICK_FORM = {"s_login_id": "AZ999999", "s_password": "seisan-pass", "k_compa
                  "k_login_id": "AZ999999", "k_password": "kintai-pass"}
 
 
-def test_oneclick_stream_end_to_end(client, wired):
+def test_oneclick_stream_end_to_end(client, wired, monkeypatch):
+    monkeypatch.setattr(rakuraku_web, "today_jst", lambda: __import__("datetime").date(2026, 9, 28))
     from tests.test_oneclick import _attendance_count, sse_events
 
     events = sse_events(client.post("/oneclick/stream", data=ONECLICK_FORM).get_data(as_text=True))
@@ -119,7 +120,8 @@ def test_oneclick_stream_end_to_end(client, wired):
     assert wired.state["forbidden"] == []
 
 
-def test_oneclick_stream_skips_empty_month(client, wired):
+def test_oneclick_stream_skips_empty_month(client, wired, monkeypatch):
+    monkeypatch.setattr(rakuraku_web, "today_jst", lambda: __import__("datetime").date(2026, 9, 28))
     from tests.test_oneclick import sse_events
 
     wired.state["empty_months"].append("2026-08")
@@ -130,7 +132,8 @@ def test_oneclick_stream_skips_empty_month(client, wired):
         d for e, d in events if e == "step" and d["key"] == "k:export:2026-08"][-1].items()
 
 
-def test_oneclick_stream_all_months_empty_is_error(client, wired):
+def test_oneclick_stream_all_months_empty_is_error(client, wired, monkeypatch):
+    monkeypatch.setattr(rakuraku_web, "today_jst", lambda: __import__("datetime").date(2026, 9, 28))
     from tests.test_oneclick import sse_events
 
     wired.state["empty_months"].extend(["2026-09", "2026-08"])

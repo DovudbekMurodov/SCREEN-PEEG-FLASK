@@ -22,7 +22,13 @@ from rakuraku import redact
 from rakuraku.browser import browser_session, playwright_available
 from rakuraku.errors import SERVICE_NAMES, PlaywrightUnavailable, RakuError
 from rakuraku.kintai import KintaiClient
-from rakuraku.oneclick import mime_of, months_from_expense_csv, normalize_attendance_xlsx, run_engine
+from rakuraku.oneclick import (
+    mime_of,
+    months_from_expense_csv,
+    normalize_attendance_xlsx,
+    plan_kintai_months,
+    run_engine,
+)
 from rakuraku.params import (
     KintaiParams,
     ParamError,
@@ -375,9 +381,9 @@ def oneclick_stream():
             finally:
                 seisan.logout()
 
-            months = months_from_expense_csv(csv_data) or default_kintai_months(today)
-            dropped = months[ONECLICK_MAX_MONTHS:]
-            months = months[:ONECLICK_MAX_MONTHS]
+            # 当月・前月は必ず取得し、CSVの明細日付にそれより前の月があれば追加する。
+            months, dropped = plan_kintai_months(
+                months_from_expense_csv(csv_data), default_kintai_months(today), ONECLICK_MAX_MONTHS)
             on_step.emit("steps", {"before": ONECLICK_CHECK_STEP, "steps": [
                 {"key": "k:" + k, "label": translate(label, lang)}
                 for k, label in KintaiClient.steps_for(months)[2:]

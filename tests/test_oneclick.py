@@ -15,7 +15,7 @@ import pytest
 
 import app as appmod
 import rakuraku_web
-from rakuraku.oneclick import months_from_expense_csv, normalize_attendance_xlsx
+from rakuraku.oneclick import months_from_expense_csv, normalize_attendance_xlsx, plan_kintai_months
 from tests.oneclick_fixtures import (
     EMP_NAME,
     attendance_xlsx_bytes,
@@ -62,6 +62,22 @@ def test_months_utf8_bom_and_missing_column():
     text = expense_csv_bytes().decode("cp932")
     assert months_from_expense_csv(text.encode("utf-8-sig")) == ["2026-09", "2026-08"]
     assert months_from_expense_csv("伝票No,金額\r\n1,100\r\n".encode("cp932")) == []
+
+
+BASE = ["2026-09", "2026-08"]  # 9月に実行したときの 当月・前月
+
+
+def test_plan_always_includes_current_and_previous_month():
+    # お客様の要望: CSVが9月分だけでも、8月・9月の2か月を取得する
+    assert plan_kintai_months(["2026-09"], BASE, 4) == (["2026-09", "2026-08"], [])
+    assert plan_kintai_months([], BASE, 4) == (["2026-09", "2026-08"], [])
+
+
+def test_plan_adds_older_csv_months_and_caps():
+    assert plan_kintai_months(["2026-09", "2026-08", "2026-07"], BASE, 4) == (["2026-09", "2026-08", "2026-07"], [])
+    csv = ["2026-09", "2026-08", "2026-07", "2026-06", "2026-05"]
+    assert plan_kintai_months(csv, BASE, 4) == (["2026-09", "2026-08", "2026-07", "2026-06"], ["2026-05"])
+    assert plan_kintai_months(csv, BASE, 1) == (["2026-09", "2026-08"], ["2026-07", "2026-06", "2026-05"])  # 当月・前月は上限でも削らない
 
 
 # ------------------------------------------------------------------ 出勤簿の正規化
@@ -130,6 +146,7 @@ def _fake_session(**kwargs):
 class _FakeSeisan:
     STEPS = rakuraku_web.SeisanClient.STEPS
     calls = []
+    dates = ("2026/08/28", "2026/09/03")
 
     def __init__(self, *a, **k):
         pass
@@ -139,7 +156,7 @@ class _FakeSeisan:
         for key, _label in self.STEPS:
             on_step(key, "running")
             on_step(key, "done")
-        return "出張精算_20260928_000000.csv", expense_csv_bytes()
+        return "出張精算_20260928_000000.csv", expense_csv_bytes(_FakeSeisan.dates)
 
     def logout(self):
         pass
@@ -175,7 +192,9 @@ def fake_clients(monkeypatch):
     monkeypatch.setattr(rakuraku_web, "browser_session", _fake_session)
     monkeypatch.setattr(rakuraku_web, "SeisanClient", _FakeSeisan)
     monkeypatch.setattr(rakuraku_web, "KintaiClient", _FakeKintai)
+    monkeypatch.setattr(rakuraku_web, "today_jst", lambda: dt.date(2026, 9, 28))  # 実行日を固定
     _FakeSeisan.calls[:] = []
+    _FakeSeisan.dates = ("2026/08/28", "2026/09/03")
     _FakeKintai.months_seen[:] = []
     _FakeKintai.empty = ()
 
@@ -207,6 +226,19 @@ def test_oneclick_runs_seisan_kintai_and_real_engine(client, fake_clients):
     assert _attendance_count(result["log"]) == 61  # 9月30日 + 8月31日 が読めている
     assert result["skipped"] == [] and result["dropped"] == []
     assert set(_oneclick_jobs()) == before  # 作業フォルダはサーバに残さない
+
+
+def test_oneclick_fetches_previous_month_even_if_csv_has_only_current_month(client, fake_clients):
+    _FakeSeisan.dates = ("2026/09/10", "2026/09/11")
+    events = sse_events(client.post("/oneclick/stream", data=FORM).get_data(as_text=True))
+    assert _FakeKintai.months_seen == [["2026-09", "2026-08"]]
+    assert _attendance_count([d for e, d in events if e == "result"][0]["log"]) == 61
+
+
+def test_oneclick_adds_older_month_from_csv(client, fake_clients):
+    _FakeSeisan.dates = ("2026/07/30", "2026/09/02")
+    sse_events(client.post("/oneclick/stream", data=FORM).get_data(as_text=True))
+    assert _FakeKintai.months_seen == [["2026-09", "2026-08", "2026-07"]]
 
 
 def test_oneclick_skipped_month_still_creates_check_sheet(client, fake_clients):

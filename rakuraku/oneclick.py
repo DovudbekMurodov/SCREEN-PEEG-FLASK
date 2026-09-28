@@ -89,6 +89,22 @@ def months_from_expense_csv(data):
     return sorted(months, reverse=True)
 
 
+def plan_kintai_months(csv_months, base_months, max_months):
+    # type: (list, list, int) -> tuple
+    """取得する出勤簿の月を決める。
+
+    当月・前月 (base_months) は必ず取得し (楽楽勤怠は月ごとの出力のため、月をまたぐ出張でも
+    前月分が欠けないように)、出張精算CSVの明細日付にそれ以外の月があれば新しい順に追加する。
+    上限 max_months を超えた月は取得しない。戻り値 (取得する月[新しい順], 取得しない月)。
+    """
+    required = [m for m in base_months]
+    extra = sorted({m for m in csv_months if m not in required}, reverse=True)
+    limit = max(max_months, len(required))
+    chosen = (required + extra)[:limit]
+    dropped = (required + extra)[limit:]
+    return sorted(chosen, reverse=True), dropped
+
+
 # --------------------------------------------------------------------- 出勤簿 xlsx
 def _clock(day, value):
     # type: (dt.date, object) -> dt.datetime | None

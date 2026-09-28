@@ -74,7 +74,7 @@
               {% for name in approvers %}<option value="{{ name }}">{{ name }}</option>{% endfor %}
             </select>
           </div>
-          <div class="hint">{{ _("出勤簿は、取得した出張精算データの明細日付から必要な月を自動で判断して取得します（最大{n}か月）。", n=max_months) }}</div>
+          <div class="hint">{{ _("出勤簿は、当月と前月の2か月分を必ず取得し、出張精算データの明細日付にそれより前の月があれば追加で取得します（最大{n}か月）。", n=max_months) }}</div>
         </div>
 
         <div class="actions">
