@@ -31,6 +31,7 @@ from rakuraku.errors import (
     ServerBusy,
 )
 from rakuraku.kintai import KintaiClient
+from rakuraku.live import LiveView
 from rakuraku.locators import PlaywrightError, set_cancel
 from rakuraku.oneclick import (
     mime_of,
@@ -75,6 +76,7 @@ MAX_CONCURRENT_JOBS = max(1, int(os.environ.get("RR_MAX_CONCURRENT_JOBS", "1") o
 QUEUE_WAIT_SECONDS = int(os.environ.get("RR_QUEUE_WAIT_SECONDS", "900") or 900)
 HEARTBEAT_SECONDS = 15  # 無通信で社内プロキシ等に切られないよう、SSE にコメント行を送る間隔
 WAIT_POLL_SECONDS = 5  # 順番待ち中に「お待ちください」を送り直す間隔
+LIVE_FRAME_INTERVAL = 0.4  # 実行中の画面 (ライブ表示) を送る最短間隔 (秒) ≒ 2.5コマ/秒
 # 順番待ちできる人数。待つ間も gunicorn のスレッドを1つ使うため、スレッド数より十分少なくし、
 # 超えたらすぐ「混み合っています」を返す (待ちでページ表示まで止まらないように)。
 MAX_WAITING_JOBS = int(os.environ.get("RR_MAX_WAITING_JOBS", "3") or 3)
@@ -132,18 +134,21 @@ def _sse(event, obj):
     return "event: %s\ndata: %s\n\n" % (event, json.dumps(obj, ensure_ascii=False))
 
 
-def _stream(steps, run, lang, secrets=()):
-    # type: (list, object, str, tuple) -> Response
+def _stream(steps, run, lang, secrets=(), live=False):
+    # type: (list, object, str, tuple, bool) -> Response
     """run(on_step) をワーカースレッドで実行し、ステップ進捗を SSE で流す。サーバに保存しない。
 
     run の戻り値が (filename, bytes, mime) なら最後にファイルを base64 で送る。
     {"event": 名前, "data": dict} ならそのイベントを送る (ワンクリック実行の結果など)。
-    on_step.emit(event, data) で任意のイベント (ステップ追加など) も送れる。"""
+    on_step.emit(event, data) で任意のイベント (ステップ追加など) も送れる。
+    live=True なら on_step.frame(b64jpeg) で渡された画面を "frame" イベントで流す
+    (最新の1コマだけを持ち、LIVE_FRAME_INTERVAL ごとに送る。保存しない)。"""
 
     def gen():
         q = queue.Queue()
         holder = {}
         cancel = threading.Event()  # 接続が切れたら立てる → 次のステップ境界で打ち切り
+        frame_box = [(0, None)]  # (番号, base64 JPEG) — 1回の代入で入れ替える (スレッド間で安全)
 
         def on_step(key, status, detail=None):
             if cancel.is_set():
@@ -151,6 +156,11 @@ def _stream(steps, run, lang, secrets=()):
             q.put(("step", {"key": key, "status": status, "detail": detail}))
 
         on_step.emit = lambda event, data: q.put((event, data))
+
+        def on_frame(data):
+            frame_box[0] = (frame_box[0][0] + 1, data)
+
+        on_step.frame = on_frame if live else None
 
         def on_wait():
             if cancel.is_set():
@@ -190,16 +200,38 @@ def _stream(steps, run, lang, secrets=()):
                 q.put((None, None))
 
         threading.Thread(target=work, daemon=True).start()
+        sent = {"seq": 0, "at": 0.0}
+
+        def pending_frame(force=False):
+            # 新しいコマがあり、前回から間隔が空いていれば (force なら必ず) frame イベントを返す
+            seq, data = frame_box[0]
+            now = time.monotonic()
+            if data is None or seq == sent["seq"] or (not force and now - sent["at"] < LIVE_FRAME_INTERVAL):
+                return None
+            sent["seq"], sent["at"] = seq, now
+            return _sse("frame", {"b64": data})
+
         try:
             yield _sse("steps", {"steps": steps})
+            last_out = time.monotonic()
             while True:
                 try:
-                    typ, payload = q.get(timeout=HEARTBEAT_SECONDS)
+                    typ, payload = q.get(timeout=LIVE_FRAME_INTERVAL if live else HEARTBEAT_SECONDS)
                 except queue.Empty:
-                    yield ": ping\n\n"
-                    continue
+                    typ, payload = "_idle", None
+                if live:
+                    # 結果・エラーの直前には、最後の画面を必ず送る
+                    out = pending_frame(force=typ in (None, "done", "error", "result"))
+                    if out:
+                        yield out
+                        last_out = time.monotonic()
                 if typ is None:
                     break
+                if typ == "_idle":
+                    if time.monotonic() - last_out >= HEARTBEAT_SECONDS:
+                        yield ": ping\n\n"
+                        last_out = time.monotonic()
+                    continue
                 if typ == "done":
                     name, data, mime = holder["file"]
                     yield _sse("file", {"filename": name, "mime": mime, "b64": base64.b64encode(data).decode()})
@@ -207,6 +239,7 @@ def _stream(steps, run, lang, secrets=()):
                     yield _sse("error", payload if isinstance(payload, dict) else {"message": payload})
                 else:
                     yield _sse(typ, payload)
+                last_out = time.monotonic()
         finally:
             cancel.set()  # 正常終了でも立ててよい (処理はもう終わっている)
 
@@ -215,6 +248,24 @@ def _stream(steps, run, lang, secrets=()):
         mimetype="text/event-stream",
         headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
     )
+
+
+@contextlib.contextmanager
+def _session(on_step=None):
+    """ブラウザを起動し、ライブ表示が有効なら画面の配信も始める。"""
+    with browser_session(headless=HEADLESS, slow_mo_ms=SLOWMO_MS, proxy_url=PROXY_URL) as ctx:
+        frame = getattr(on_step, "frame", None)
+        view = LiveView(ctx, frame) if frame else None
+        try:
+            yield ctx
+        finally:
+            if view:
+                view.close()
+
+
+def _wants_live():
+    # type: () -> bool
+    return request.form.get("live") == "1"
 
 
 def _sse_single_error(message):
@@ -288,7 +339,7 @@ def seisan_stream():
     steps = [{"key": k, "label": translate(label, lang)} for k, label in SeisanClient.STEPS]
 
     def run(on_step):
-        with browser_session(headless=HEADLESS, slow_mo_ms=SLOWMO_MS, proxy_url=PROXY_URL) as ctx:
+        with _session(on_step) as ctx:
             client = SeisanClient(ctx, SEISAN_BASE_URL, log=lambda m, lvl="info": log.info("%s", m))
             try:
                 name, data = client.download(params, on_step=on_step)
@@ -296,7 +347,7 @@ def seisan_stream():
                 client.logout()
         return name, data, "text/csv"
 
-    return _stream(steps, run, lang, secrets=(params.password,))
+    return _stream(steps, run, lang, secrets=(params.password,), live=_wants_live())
 
 
 # ---------------------------------------------------------------------- 楽楽勤怠
@@ -378,7 +429,7 @@ def kintai_stream():
             # detail はクライアント側の日本語 (例: データ無しでスキップ) → 表示言語に翻訳。
             on_step(key, status, translate(detail, lang) if detail else None)
 
-        with browser_session(headless=HEADLESS, slow_mo_ms=SLOWMO_MS, proxy_url=PROXY_URL) as ctx:
+        with _session(on_step) as ctx:
             client = KintaiClient(
                 ctx, KINTAI_LOGIN_URL, KINTAI_ATTENDANCE_URL, log=lambda m, lvl="info": log.info("%s", m)
             )
@@ -395,7 +446,7 @@ def kintai_stream():
                 zf.writestr(name, data)
         return "出勤簿_日別詳細.zip", buf.getvalue(), "application/zip"
 
-    return _stream(steps, run, lang, secrets=(params.password,))
+    return _stream(steps, run, lang, secrets=(params.password,), live=_wants_live())
 
 
 # ---------------------------------------------------------------------- ワンクリック実行
@@ -469,7 +520,7 @@ def oneclick_stream():
             return _step
 
         info = lambda m, lvl="info": log.info("%s", m)  # noqa: E731
-        with browser_session(headless=HEADLESS, slow_mo_ms=SLOWMO_MS, proxy_url=PROXY_URL) as ctx:
+        with _session(on_step) as ctx:
             seisan = SeisanClient(ctx, SEISAN_BASE_URL, log=info)
             try:
                 csv_name, csv_data = seisan.download(sparams, on_step=step_for("s:"))
@@ -510,4 +561,4 @@ def oneclick_stream():
             "approver": approver or translate("全員（絞り込みなし）", lang),
         }}
 
-    return _stream(steps, run, lang, secrets=(sparams.password, kcred.password))
+    return _stream(steps, run, lang, secrets=(sparams.password, kcred.password), live=_wants_live())

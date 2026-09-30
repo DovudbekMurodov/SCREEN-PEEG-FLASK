@@ -207,10 +207,97 @@
     resultBox.hidden = false;
   }
 
+  // ---- 実行中の画面 (ライブ表示・閲覧のみ) ----
+  // サーバのブラウザ画面を "frame" イベント (JPEG) で受け取り、<img> に表示するだけ。
+  // 利用者のクリック・入力をサーバへ送る経路は無い (pointer-events: none)。
+  var live = null;
+  function liveUi() {
+    if (live) return live;
+    var box = el("div", "rr-live");
+    box.setAttribute("role", "dialog");
+    box.setAttribute("aria-label", t("live-title"));
+    var head = el("div", "rr-live-head");
+    head.appendChild(el("span", "rr-live-dot", "LIVE"));
+    var title = el("span", "rr-live-title", t("live-title"));
+    head.appendChild(title);
+    var step = el("span", "rr-live-step", "");
+    head.appendChild(step);
+    var minBtn = el("button", "rr-live-btn", t("live-min"));
+    minBtn.type = "button";
+    var closeBtn = el("button", "rr-live-btn", "✕");
+    closeBtn.type = "button";
+    closeBtn.title = t("live-close");
+    closeBtn.setAttribute("aria-label", t("live-close"));
+    head.appendChild(minBtn);
+    head.appendChild(closeBtn);
+    var screen = el("div", "rr-live-screen");
+    var img = document.createElement("img");
+    img.alt = t("live-title");
+    var wait = el("div", "rr-live-wait", t("live-wait"));
+    screen.appendChild(img);
+    screen.appendChild(wait);
+    var note = el("div", "rr-live-note", t("live-note"));
+    box.appendChild(head);
+    box.appendChild(screen);
+    box.appendChild(note);
+    document.body.appendChild(box);
+    var reopen = el("button", "btn-ghost rr-live-reopen", t("live-show"));
+    reopen.type = "button";
+    flow.insertBefore(reopen, flow.querySelector(".rr-steps"));
+    live = { box: box, img: img, wait: wait, step: step, minBtn: minBtn, reopen: reopen, closedByUser: false };
+    minBtn.addEventListener("click", function () { liveMin(!box.classList.contains("rr-live-min")); });
+    screen.addEventListener("click", function () { if (box.classList.contains("rr-live-min")) liveMin(false); });
+    closeBtn.addEventListener("click", function () { live.closedByUser = true; liveShow(false); });
+    reopen.addEventListener("click", function () { live.closedByUser = false; liveShow(true); liveMin(false); });
+    return live;
+  }
+  function liveMin(on) {
+    if (!live) return;
+    live.box.classList.toggle("rr-live-min", on);
+    live.minBtn.textContent = on ? t("live-max") : t("live-min");
+  }
+  function liveShow(on) {
+    if (!live) return;
+    live.box.classList.toggle("rr-live-open", on);
+    live.reopen.hidden = on || !live.img.getAttribute("src");
+  }
+  function liveReset(enabled) {
+    if (!enabled) return;
+    var ui = liveUi();
+    ui.closedByUser = false;
+    ui.img.removeAttribute("src");
+    ui.wait.hidden = false;
+    ui.step.textContent = "";
+    ui.box.classList.remove("rr-live-ended");
+    liveMin(false);
+    liveShow(true);
+  }
+  function liveFrame(b64) {
+    var ui = liveUi();
+    ui.img.src = "data:image/jpeg;base64," + b64;
+    ui.wait.hidden = true;
+    if (!ui.closedByUser && !ui.box.classList.contains("rr-live-open")) liveShow(true);
+  }
+  function liveEnd() {
+    if (!live) return;
+    live.box.classList.add("rr-live-ended");
+    live.step.textContent = t("live-done");
+    if (!live.img.getAttribute("src")) { liveShow(false); live.reopen.hidden = true; return; }
+    liveMin(true); // 結果を見やすくするため、終了したら小さくする
+  }
+  var liveEnabled = !!(flow && flow.getAttribute("data-t-live-title"));
+
   var waitMsg = ""; // 順番待ち中の表示 (最初のステップが動き出したら消す)
   function handleEvent(ev, data) {
     if (ev === "wait") { waitMsg = data.message || ""; statusText(waitMsg); return; }
-    if (ev === "step") waitMsg = "";
+    if (ev === "frame") { if (data.b64) liveFrame(data.b64); return; }
+    if (ev === "step") {
+      waitMsg = "";
+      if (live && data.status === "running") {
+        var li = findStep(data.key);
+        if (li) live.step.textContent = li.querySelector(".rr-step-label").textContent;
+      }
+    }
     if (ev === "steps") { if (data.before) insertSteps(data.steps, data.before); else renderSteps(data.steps); }
     else if (ev === "step") setStep(data.key, data.status, data.detail);
     else if (ev === "file") { statusText(t("done")); download(data); }
@@ -231,6 +318,7 @@
     flow.classList.remove("rr-has-error");
     flow.querySelector(".rr-steps").innerHTML = "";
     waitMsg = "";
+    liveReset(liveEnabled);
     if (resultBox) { resultBox.hidden = true; resultBox.innerHTML = ""; }
     setBusy(true);
     var start = Date.now();
@@ -243,7 +331,9 @@
     }, 500);
     var finished = false;
 
-    fetch(url, { method: "POST", body: new FormData(form), credentials: "same-origin",
+    var body = new FormData(form);
+    if (liveEnabled) body.append("live", "1");
+    fetch(url, { method: "POST", body: body, credentials: "same-origin",
                  headers: { "Accept": "text/event-stream" } })
       .then(function (resp) {
         var reader = resp.body.getReader(), dec = new TextDecoder("utf-8"), buf = "";
@@ -270,7 +360,7 @@
       })
       .catch(function () { statusText(t("error")); flow.classList.add("rr-has-error"); })
       .finally(function () {
-        clearInterval(timer); setBusy(false);
+        clearInterval(timer); setBusy(false); liveEnd();
         // 接続が途中で切れた (結果もエラーも来ない) 場合もエラー表示にする
         if (!finished && !flow.classList.contains("rr-has-error")) { statusText(t("error")); flow.classList.add("rr-has-error"); }
       });

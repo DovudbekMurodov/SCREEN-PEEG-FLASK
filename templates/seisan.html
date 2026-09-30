@@ -76,7 +76,15 @@
            data-t-running="{{ _('処理を実行しています…') }}"
            data-t-done="{{ _('完了しました。ダウンロードします。') }}"
            data-t-error="{{ _('エラーが発生しました。') }}"
-           data-t-elapsed="{{ _('経過 {s} 秒') }}">
+           data-t-elapsed="{{ _('経過 {s} 秒') }}"
+           data-t-live-title="{{ _('自動操作の画面（リアルタイム）') }}"
+           data-t-live-note="{{ _('サーバで動いているブラウザの画面です。閲覧のみで、操作はできません。画面は保存されません。') }}"
+           data-t-live-wait="{{ _('ブラウザを起動しています…') }}"
+           data-t-live-show="{{ _('実行中の画面を表示') }}"
+           data-t-live-min="{{ _('小さくする') }}"
+           data-t-live-max="{{ _('大きくする') }}"
+           data-t-live-close="{{ _('閉じる') }}"
+           data-t-live-done="{{ _('終了しました') }}">
         <div class="rr-flow-status"></div>
         <ol class="rr-steps"></ol>
       </div>

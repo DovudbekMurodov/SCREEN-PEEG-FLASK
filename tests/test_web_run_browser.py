@@ -230,3 +230,31 @@ def test_oneclick_kintai_without_permission_is_explained(client, wired, monkeypa
     assert kind == "error"
     assert "出勤簿管理の権限" in data["message"] and "画面構成が想定と異なる" not in data["message"]
     assert "表示されていたメニュー" in data["log"]
+
+
+# ---------------------------------------------------------------- 実行中の画面 (ライブ表示)
+def test_live_frames_streamed_only_when_requested(client, wired):
+    import base64 as b64
+
+    form = {"login_id": "AZ999999", "password": "seisan-pass", "statuses": "承認依頼中"}
+    body = client.post("/seisan/stream", data=dict(form, live="1")).get_data(as_text=True)
+    frames = [line for line in body.split("\n\n") if line.startswith("event: frame")]
+    assert frames, "no live frames"
+    data = __import__("json").loads(frames[-1].split("data: ", 1)[1])["b64"]
+    assert b64.b64decode(data)[:3] == b"\xff\xd8\xff"  # JPEG
+    # 最後の画面は結果 (file) より前に届く
+    assert body.rfind("event: frame") < body.find("event: file")
+
+    plain = client.post("/seisan/stream", data=form).get_data(as_text=True)
+    assert "event: frame" not in plain and "event: file" in plain
+
+
+def test_live_frames_in_oneclick_cover_both_sites(client, wired, monkeypatch):
+    monkeypatch.setattr(rakuraku_web, "today_jst", lambda: __import__("datetime").date(2026, 9, 28))
+    from tests.test_oneclick import sse_events
+
+    events = sse_events(client.post("/oneclick/stream", data=dict(ONECLICK_FORM, live="1")).get_data(as_text=True))
+    kinds = [e for e, _ in events]
+    first_k = kinds.index("steps", 1)  # 勤怠の月別ステップ挿入 = 精算の後
+    assert "frame" in kinds[:first_k] and "frame" in kinds[first_k:]  # 精算・勤怠の両方の画面
+    assert kinds[-1] == "result"

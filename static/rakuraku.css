@@ -210,3 +210,37 @@
 .rr-details-body { padding: 2px 16px 18px; border-top: 1px solid var(--border); }
 .rr-details-body h3 { font-size: 12.5px; font-weight: 700; color: var(--navy-dk); margin: 16px 0 10px; }
 @media (prefers-reduced-motion: reduce) { .rr-details > summary::after { transition: none; } }
+
+/* ---- 実行中の画面 (ライブ表示・閲覧のみ) ---- */
+.rr-live { position: fixed; z-index: 1000; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  width: min(1040px, calc(100vw - 32px)); background: #0b1130; border-radius: 12px; overflow: hidden;
+  box-shadow: 0 24px 64px rgba(8, 15, 40, .45); display: none; }
+.rr-live.rr-live-open { display: block; }
+.rr-live-head { display: flex; align-items: center; gap: 10px; padding: 9px 12px; color: #e6ebff; font-size: 13px; }
+.rr-live-dot { font-size: 10px; font-weight: 800; letter-spacing: .08em; color: #fff; background: #d93a3a;
+  border-radius: 99px; padding: 2px 8px; animation: rr-live-blink 1.6s ease-in-out infinite; }
+.rr-live.rr-live-ended .rr-live-dot { background: #6b7493; animation: none; }
+@keyframes rr-live-blink { 50% { opacity: .45; } }
+.rr-live-title { font-weight: 700; white-space: nowrap; }
+.rr-live-step { flex: 1; min-width: 0; color: #aab6e8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rr-live-btn { background: rgba(255,255,255,.1); color: #e6ebff; border: 0; border-radius: 6px; padding: 4px 10px;
+  font-size: 12px; cursor: pointer; white-space: nowrap; }
+.rr-live-btn:hover { background: rgba(255,255,255,.2); }
+.rr-live-screen { position: relative; background: #fff; aspect-ratio: 1100 / 688; }
+.rr-live-screen img { display: block; width: 100%; height: 100%; object-fit: contain; background: #fff;
+  pointer-events: none; user-select: none; -webkit-user-drag: none; }
+.rr-live-wait { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  color: #5b6478; font-size: 14px; background: #f4f6fb; }
+.rr-live-wait[hidden] { display: none; }
+.rr-live-note { color: #97a3cf; font-size: 11.5px; padding: 7px 12px 9px; }
+/* 小さく表示 (右下に浮かせる) */
+.rr-live.rr-live-min { left: auto; top: auto; right: 16px; bottom: 16px; transform: none; width: 300px; }
+.rr-live.rr-live-min .rr-live-title, .rr-live.rr-live-min .rr-live-note { display: none; }
+.rr-live.rr-live-min .rr-live-screen { cursor: zoom-in; }
+.rr-live-reopen { margin: 0 0 12px; font-size: 12.5px; }
+.rr-live-reopen[hidden] { display: none; }
+@media (max-width: 640px) {
+  .rr-live { top: auto; bottom: 0; transform: translateX(-50%); width: 100vw; border-radius: 12px 12px 0 0; }
+  .rr-live-title { display: none; }
+  .rr-live.rr-live-min { width: 200px; border-radius: 10px; }
+}
