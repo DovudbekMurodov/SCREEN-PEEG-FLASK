@@ -218,3 +218,15 @@ def test_oneclick_kintai_locked_uz(client, wired, monkeypatch):
     client.get("/lang/uz")
     events = sse_events(client.post("/oneclick/stream", data=ONECLICK_FORM).get_data(as_text=True))
     assert "hisobi bloklangan" in events[-1][1]["message"]
+
+
+def test_oneclick_kintai_without_permission_is_explained(client, wired, monkeypatch):
+    monkeypatch.setattr(rakuraku_web, "today_jst", lambda: __import__("datetime").date(2026, 9, 28))
+    from tests.test_oneclick import sse_events
+
+    wired.state["kintai_no_permission"] = True
+    events = sse_events(client.post("/oneclick/stream", data=ONECLICK_FORM).get_data(as_text=True))
+    kind, data = events[-1]
+    assert kind == "error"
+    assert "出勤簿管理の権限" in data["message"] and "画面構成が想定と異なる" not in data["message"]
+    assert "表示されていたメニュー" in data["log"]

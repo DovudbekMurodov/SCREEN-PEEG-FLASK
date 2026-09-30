@@ -191,12 +191,13 @@ def select_option_fuzzy(select, wanted):
 # 画面に出ているエラー/お知らせの文言を拾う候補。楽楽側の実際の表示を利用者に見せるために使う。
 MESSAGE_CSS = (
     "[role=alert], .error, .errors, .errorMessage, .errMsg, .text-error, "
-    "[class*='error'], [class*='Error'], [class*='alert'], [class*='warn'], [class*='message'], [class*='Message']"
+    "[class*='error'], [class*='Error'], [class*='alert'], [class*='warn'], [class*='message'], [class*='Message'], "
+    "[role=dialog], [class*='dialog'], [class*='modal']"
 )
 # 新しく出た文言のうち「失敗・該当なし」を示すもの (「処理中…」などの一時表示は除く)
 ERRORISH = re.compile(
     r"エラー|できません|ありません|存在しません|見つかりません|失敗|入力してください|選択してください"
-    r"|正しくありません|誤り|超え|ロック"
+    r"|正しくありません|誤り|超え|ロック|権限"
 )
 
 _MESSAGES_JS = """(css) => {

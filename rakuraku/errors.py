@@ -8,10 +8,11 @@ class RakuError(Exception):
     code = "RAKU_ERROR"
     user_message = "自動処理でエラーが発生しました。"
 
-    def __init__(self, detail="", service=None, user_message=None, site_message=""):
-        # type: (str, str | None, str | None, str) -> None
+    def __init__(self, detail="", service=None, user_message=None, site_message="", log=""):
+        # type: (str, str | None, str | None, str, str) -> None
         self.detail = detail
         self.service = service
+        self.log = log  # 画面の「実行ログ」に出す補足 (原因の切り分け用。サーバには保存しない)
         # 楽楽側の画面に出た文言 (例: 「パスワードが正しくありません」)。利用者にそのまま見せ、
         # 「IDとパスワードの誤りか、ツールの不具合か」を画面だけで切り分けられるようにする。
         self.site_message = site_message or ""
@@ -33,6 +34,16 @@ class LoginFailed(RakuError):
 class AccountLocked(RakuError):
     code = "ACCOUNT_LOCKED"
     user_message = "{service}のアカウントがロックされています。{service}の管理者にロック解除を依頼してください。"
+
+
+class AttendanceUnavailable(RakuError):
+    # ログインはできたが「出勤簿管理」を開けない。一般社員アカウント (権限なし) で起きる。
+    code = "ATTENDANCE_UNAVAILABLE"
+    user_message = (
+        "楽楽勤怠の「出勤簿管理」画面を開けませんでした。このアカウントに出勤簿管理の権限"
+        "（管理者・承認者向け）がない可能性があります。権限のあるアカウントでお試しいただくか、"
+        "楽楽勤怠の管理者にご確認ください。"
+    )
 
 
 class PasswordExpired(RakuError):
@@ -111,5 +122,5 @@ class CheckSheetFailed(RakuError):
 
     def __init__(self, detail="", service=None, user_message=None, log="", site_message=""):
         # type: (str, str | None, str | None, str, str) -> None
-        self.log = log  # 画面の「実行ログ」に出す (サーバ内部のパスは除去済み)
-        super().__init__(detail, service=service, user_message=user_message, site_message=site_message)
+        # log: 画面の「実行ログ」に出す (サーバ内部のパスは除去済み)
+        super().__init__(detail, service=service, user_message=user_message, site_message=site_message, log=log)

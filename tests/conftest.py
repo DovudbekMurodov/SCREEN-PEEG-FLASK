@@ -25,6 +25,7 @@ def raku(mock):
     st["seisan_locked"] = False
     st["seisan_login_mode"] = "ok"
     st["kintai_login_mode"] = "ok"
+    st["kintai_no_permission"] = False
     return mock
 
 

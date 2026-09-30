@@ -5,6 +5,7 @@ import os
 import re
 import tempfile
 import time
+from urllib.parse import urlsplit
 
 try:
     from playwright.sync_api import Error as PlaywrightError
@@ -14,6 +15,7 @@ except ImportError:  # playwright 未インストールでも import 可能に�
 from rakuraku import selectors as sel
 from rakuraku.errors import (
     AccountLocked,
+    AttendanceUnavailable,
     AdditionalAuthRequired,
     DownloadTimeout,
     ExportFailed,
@@ -289,15 +291,50 @@ class KintaiClient:
             self._wait_period(20000)
         except (PlaywrightError, MonthNavigationFailed):
             self.log("出勤簿管理のURLを直接開けなかったため、メニューから移動します。", "warning")
-            safe_click(resolve(page, sel.kintai_menu_tab(page), service=SERVICE, name="menu"), service=SERVICE)
-            safe_click(resolve(page, sel.kintai_menu_item(page), service=SERVICE, name="menu_item"), service=SERVICE)
-            self._wait_period(self.nav_timeout_ms)
+            try:
+                safe_click(resolve(page, sel.kintai_menu_tab(page), service=SERVICE, name="menu"), service=SERVICE)
+                safe_click(resolve(page, sel.kintai_menu_item(page), timeout_ms=5000, service=SERVICE,
+                                   name="menu_item"), service=SERVICE)
+                self._wait_period(self.nav_timeout_ms)
+            except (SelectorNotFound, MonthNavigationFailed, PlaywrightError):
+                # メニューに「出勤簿管理」が無い = 多くは権限の無い一般社員アカウント。
+                # 画面に出ていたメニュー名・文言を実行ログに添えて、原因を画面だけで切り分けられるようにする。
+                raise AttendanceUnavailable(
+                    "attendance management not reachable", service=SERVICE,
+                    site_message=redact(next((m for m in visible_messages(page) if ERRORISH.search(m)), "")),
+                    log=self._screen_summary(),
+                )
         # Vue アプリ(矢印/絞り込みのハンドラ)が完全にマウントされるまで待つ。
         try:
             page.wait_for_load_state("networkidle", timeout=15000)
         except PlaywrightError:
             pass
         self.log("出勤簿管理を開きました（表示中: %s）。" % self._displayed_month())
+
+    def _screen_summary(self):
+        # type: () -> str
+        """いま表示中の画面の概要 (URLのパス・見出し・メニュー名)。個人の勤怠データは含めない。"""
+        page = self.page
+        lines = []
+        try:
+            lines.append("URL: " + urlsplit(page.url).path)
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            lines.append("タイトル: " + (page.title() or "")[:80])
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            menus = page.locator("#appHeader button, #appHeader li, nav a, nav button").all_inner_texts()
+            labels = []
+            for text in menus:
+                t = re.sub(r"\s+", " ", text or "").strip()
+                if t and len(t) <= 20 and t not in labels:
+                    labels.append(t)
+            lines.append("表示されていたメニュー: " + ("、".join(labels[:30]) or "（なし）"))
+        except Exception:  # noqa: BLE001
+            pass
+        return "\n".join(lines)
 
     def _container_text(self):
         page = self.page

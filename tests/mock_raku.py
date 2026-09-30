@@ -69,7 +69,8 @@ def create_mock():
                            "seisan_locked": False,  # True: ログインで「ロックされています」
                            # ok / expired=パスワード期限切れ / twofactor=追加認証画面 / unknown=想定外の文言
                            "seisan_login_mode": "ok",
-                           "kintai_login_mode": "ok"}  # ok / locked / expired
+                           "kintai_login_mode": "ok",  # ok / locked / expired
+                           "kintai_no_permission": False}  # True: 出勤簿管理の権限なし (一般社員)
     st = app.config["state"]
 
     @app.post("/__mock/forbidden")
@@ -217,6 +218,10 @@ f.appendChild(a);f.appendChild(b);document.body.appendChild(f);f.submit();}
     def kintai_home():
         if request.cookies.get("kintai") != "1":
             return redirect("/app/login", code=303)
+        if st["kintai_no_permission"]:  # 一般社員: 自分の打刻・出勤簿のみ
+            return """<html><head><title>ホーム</title></head><body><div id="appHeader"><nav><ul>
+<li class="base_header_tab"><button>ホーム</button></li><li class="base_header_tab"><button>打刻</button></li>
+<li class="base_header_tab"><button>出勤簿</button></li></ul></nav></div></body></html>"""
         return """<html><body><div id="appHeader"><nav><ul>
 <li class="base_header_tab"><button>勤怠管理</button></li></ul>
 <ul><li id="attendanceManager">出勤簿管理</li></ul></nav></div></body></html>"""
@@ -225,6 +230,8 @@ f.appendChild(a);f.appendChild(b);document.body.appendChild(f);f.submit();}
     def kintai_att():
         if request.cookies.get("kintai") != "1":
             return redirect("/app/login", code=303)
+        if st["kintai_no_permission"]:
+            return redirect("/app/home", code=303)
         ym = request.cookies.get("ym", "2026-09")
         # 実サイト同様の SPA: 開いた月は読込済み。月を切り替えると矢印が
         # getMonthlyList(front-api) を叩いてその月を読み込む (loaded_ym で表現)。

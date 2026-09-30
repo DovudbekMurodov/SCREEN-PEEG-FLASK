@@ -9,6 +9,7 @@ import pytest
 from rakuraku.browser import browser_session
 from rakuraku.errors import (
     AccountLocked,
+    AttendanceUnavailable,
     AdditionalAuthRequired,
     ExportFailed,
     LoginFailed,
@@ -154,3 +155,12 @@ def test_kintai_three_months(ctx, raku):
                                                      ["2026-09", "2026-08", "2026-07"]))
     assert [n[:7] for n, _ in files] == ["2026-09", "2026-08", "2026-07"]
     assert raku.state["forbidden"] == []
+
+
+def test_kintai_account_without_attendance_management(ctx, raku):
+    # 実利用で起きた事象 (岡部さん): ログインはできるが、一般社員のため「出勤簿管理」が無い。
+    raku.state["kintai_no_permission"] = True
+    with pytest.raises(AttendanceUnavailable) as ei:
+        _kintai(ctx, raku).download(KintaiParams("PEEG", "AZ999999", "kintai-pass", ["2026-09"]))
+    log = ei.value.log
+    assert "URL: /app/home" in log and "打刻" in log and "出勤簿" in log
