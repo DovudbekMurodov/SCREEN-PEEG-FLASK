@@ -38,7 +38,7 @@ from rakuraku.locators import (
     visible_messages,
     wait_for_any,
 )
-from rakuraku.redact import redact, register_secret
+from rakuraku.redact import redact, register_secret, unregister_secret
 
 SERVICE = "seisan"
 
@@ -85,6 +85,8 @@ class SeisanClient:
 
             dump(self.page, SERVICE, "fail")
             raise
+        finally:
+            unregister_secret(params.password)
 
     def logout(self):
         page = self.page
@@ -108,7 +110,6 @@ class SeisanClient:
 
         resolve(page, sel.seisan_login_id(page), service=SERVICE, name="loginId").fill(login_id)
         resolve(page, sel.seisan_password(page), service=SERVICE, name="password").fill(password)
-        login_url = page.url
         safe_click(resolve(page, sel.seisan_submit(page), service=SERVICE, name="submit"), service=SERVICE)
 
         try:
@@ -122,7 +123,8 @@ class SeisanClient:
                 timeout_ms=self.nav_timeout_ms,
             )
         except TimeoutError:
-            if page.url == login_url and exists(page, sel.seisan_password(page)):
+            # ログイン画面が(URLが変わっても)まだ出ている = 認証に失敗。追加認証とは区別する。
+            if exists(page, sel.seisan_password(page)):
                 raise LoginFailed("login form still shown", service=SERVICE,
                                   site_message=_errorish(visible_messages(page)))
             raise AdditionalAuthRequired("unexpected page: %s" % page.url, service=SERVICE)
@@ -162,6 +164,11 @@ class SeisanClient:
             try:
                 with page.expect_navigation(wait_until="domcontentloaded", timeout=self.nav_timeout_ms):
                     chosen = select_option_fuzzy(select, params.category)
+            except SelectorNotFound as exc:
+                raise SelectorNotFound(
+                    str(exc), service=SERVICE,
+                    user_message="楽楽精算の伝票データ出力に、指定した種類が見つかりませんでした。種類の指定をご確認ください。",
+                )
             except PWTimeout:
                 chosen = _selected_label(resolve(page, sel.seisan_category_select(page)))
             self.log("伝票データ出力を「%s」に設定しました。" % chosen)
@@ -374,12 +381,14 @@ def _read_download(download):
 def _validate_csv(data):
     if not data:
         raise ExportFailed("downloaded CSV is empty", service=SERVICE)
-    head = ""
+    # 見出し行だけを見る (先頭 N バイトで切ると多バイト文字の途中で切れて誤判定するため)。
+    # cp932 / UTF-8 のどちらかで「伝票No」を含めば正しいCSVとみなす。
+    first = data.split(b"\n", 1)[0].rstrip(b"\r")
+    heads = []
     for enc in ("cp932", "utf-8-sig"):
         try:
-            head = data[:4096].decode(enc, "strict").splitlines()[0]
-            break
-        except (UnicodeDecodeError, IndexError):
-            head = ""
-    if "伝票No" not in nfkc(head) and "伝票番号" not in nfkc(head):
-        raise ExportFailed("unexpected CSV header: %r" % head[:80], service=SERVICE)
+            heads.append(nfkc(first.decode(enc, "strict")))
+        except UnicodeDecodeError:
+            continue
+    if not any("伝票No" in h or "伝票番号" in h for h in heads):
+        raise ExportFailed("unexpected CSV header: %r" % first[:80], service=SERVICE)

@@ -283,3 +283,52 @@ def test_oneclick_page_renders_with_shared_credential_keys(client):
     assert re.search(r'name="s_statuses" value="承認依頼中"\s+checked', body)
     # 表示言語はドロップダウン
     assert re.search(r'<select aria-label="[^"]+" onchange=', body) and "/lang/uz?next=" in body
+
+
+# ---------------------------------------------------------------- エンジン側の失敗・境界
+def _engine_with_main(monkeypatch, tmp_path, body, timeout=None):
+    """src/main.py の代わりに body を実行するエンジン (失敗時の表示と後片付けを確認する)。"""
+    import types
+
+    (tmp_path / "main.py").write_text(body, encoding="utf-8")
+    real = appmod.app.config["CHECKSHEET_ENGINE"]
+    fake = types.SimpleNamespace(**vars(real))
+    fake.src_dir = str(tmp_path)
+    if timeout is not None:
+        fake.timeout = timeout
+    monkeypatch.setitem(appmod.app.config, "CHECKSHEET_ENGINE", fake)
+
+
+def test_oneclick_engine_crash_shows_log_and_leaves_nothing(client, fake_clients, monkeypatch, tmp_path):
+    _engine_with_main(monkeypatch, tmp_path, "import sys\nprint('boom: master file missing')\nsys.exit(2)\n")
+    before = set(_oneclick_jobs())
+    events = sse_events(client.post("/oneclick/stream", data=FORM).get_data(as_text=True))
+    kind, data = events[-1]
+    assert kind == "error" and "チェックシートの作成中にエラーが発生しました" in data["message"]
+    assert "boom: master file missing" in data["log"]
+    assert set(_oneclick_jobs()) == before
+
+
+def test_oneclick_engine_timeout_message(client, fake_clients, monkeypatch, tmp_path):
+    _engine_with_main(monkeypatch, tmp_path, "import time\ntime.sleep(10)\n", timeout=1)
+    events = sse_events(client.post("/oneclick/stream", data=FORM).get_data(as_text=True))
+    assert events[-1][0] == "error" and "時間内に終わりませんでした" in events[-1][1]["message"]
+
+
+def test_oneclick_engine_timeout_message_english(client, fake_clients, monkeypatch, tmp_path):
+    _engine_with_main(monkeypatch, tmp_path, "import time\ntime.sleep(10)\n", timeout=1)
+    client.get("/lang/en")
+    events = sse_events(client.post("/oneclick/stream", data=FORM).get_data(as_text=True))
+    assert "時間内" not in events[-1][1]["message"]
+
+
+def test_oneclick_csv_with_header_only_does_not_crash(client, fake_clients, monkeypatch):
+    # 伝票0件のCSV (見出し行だけ) が来た場合も、汎用エラーにせず結果かわかる表示にする
+    monkeypatch.setattr(_FakeSeisan, "download", lambda self, params, on_step=None: (
+        [on_step(k, s) for k, _ in self.STEPS for s in ("running", "done")],
+        ("出張精算_empty.csv", expense_csv_bytes(()))
+    )[1])
+    events = sse_events(client.post("/oneclick/stream", data=FORM).get_data(as_text=True))
+    kinds = [e for e, _ in events]
+    assert "result" in kinds or ("error" in kinds and "自動処理でエラーが発生しました" not in events[-1][1]["message"]), events[-1]
+    assert _FakeKintai.months_seen == [["2026-09", "2026-08"]]

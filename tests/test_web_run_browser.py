@@ -195,3 +195,26 @@ def test_oneclick_stream_no_vouchers_stops_with_clear_message(client, wired, mon
     assert events[-1][0] == "error"
     assert "該当する伝票がありませんでした" in events[-1][1]["message"]
     assert wired.state["kintai_logins"] == 0  # 精算で止まり、勤怠には進まない
+
+
+def test_oneclick_kintai_login_failure_after_seisan_ok(client, wired, monkeypatch):
+    monkeypatch.setattr(rakuraku_web, "today_jst", lambda: __import__("datetime").date(2026, 9, 28))
+    from tests.test_oneclick import sse_events
+
+    form = dict(ONECLICK_FORM, k_password="wrong")
+    events = sse_events(client.post("/oneclick/stream", data=form).get_data(as_text=True))
+    steps = {d["key"]: d["status"] for e, d in events if e == "step"}
+    assert steps["s:download"] == "done" and steps["k:login"] == "running"
+    assert events[-1][0] == "error"
+    msg = events[-1][1]["message"]
+    assert "楽楽勤怠にログインできませんでした" in msg and "楽楽勤怠の表示：「正しくありません」" in msg
+
+
+def test_oneclick_kintai_locked_uz(client, wired, monkeypatch):
+    monkeypatch.setattr(rakuraku_web, "today_jst", lambda: __import__("datetime").date(2026, 9, 28))
+    from tests.test_oneclick import sse_events
+
+    wired.state["kintai_login_mode"] = "locked"
+    client.get("/lang/uz")
+    events = sse_events(client.post("/oneclick/stream", data=ONECLICK_FORM).get_data(as_text=True))
+    assert "hisobi bloklangan" in events[-1][1]["message"]

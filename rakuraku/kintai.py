@@ -26,6 +26,7 @@ from rakuraku.errors import (
 )
 from rakuraku.locators import (
     ERRORISH,
+    check_cancel,
     exists,
     first_text,
     resolve,
@@ -34,7 +35,7 @@ from rakuraku.locators import (
     visible_messages,
     wait_for_any,
 )
-from rakuraku.redact import redact, register_secret
+from rakuraku.redact import redact, register_secret, unregister_secret
 
 SERVICE = "kintai"
 
@@ -140,6 +141,13 @@ class KintaiClient:
 
             dump(self.page, SERVICE, "fail")
             raise
+        finally:
+            unregister_secret(params.password)
+
+    def _pause(self, ms):
+        # 待ちの合間に、接続が切れたジョブなら打ち切る
+        check_cancel()
+        self.page.wait_for_timeout(ms)
 
     @staticmethod
     def steps_for(months):
@@ -240,7 +248,6 @@ class KintaiClient:
                     remember.uncheck()
             except Exception:  # noqa: BLE001
                 pass
-        login_url = page.url
         safe_click(resolve(page, sel.kintai_submit(page), service=SERVICE, name="submit"), service=SERVICE)
 
         try:
@@ -255,7 +262,8 @@ class KintaiClient:
                 timeout_ms=self.nav_timeout_ms,
             )
         except TimeoutError:
-            if page.url == login_url and exists(page, sel.kintai_password(page)):
+            # ログイン画面が(URLが変わっても)まだ出ている = 認証に失敗。追加認証とは区別する。
+            if exists(page, sel.kintai_password(page)):
                 shown = next((m for m in visible_messages(page) if ERRORISH.search(m)), "")
                 raise LoginFailed("login form still shown", service=SERVICE, site_message=redact(shown))
             raise AdditionalAuthRequired("unexpected page: %s" % page.url, service=SERVICE)
@@ -315,7 +323,7 @@ class KintaiClient:
             except MonthNavigationFailed:
                 if time.monotonic() >= deadline:
                     raise
-                self.page.wait_for_timeout(300)
+                self._pause(300)
 
     def _click_and_wait_list(self, action, timeout_ms):
         # クリックで発火する出勤簿リストAPIの応答を待つ(遅い月読込を後続操作で
@@ -388,7 +396,7 @@ class KintaiClient:
                     return
             except MonthNavigationFailed:
                 pass
-            self.page.wait_for_timeout(300)
+            self._pause(300)
         raise MonthNavigationFailed("month did not change from %s" % before, service=SERVICE)
 
     def _icon_ready(self, timeout_ms):
@@ -496,7 +504,7 @@ class KintaiClient:
             if progress and elapsed - last >= 5:
                 progress("処理完了待ち %d秒" % int(elapsed))
                 last = elapsed
-            self.page.wait_for_timeout(1000)
+            self._pause(1000)
 
 
 def _read_download(download):

@@ -1,6 +1,7 @@
 """ログにパスワードを絶対に出さないための簡易マスキング。"""
 from __future__ import annotations
 
+import contextlib
 import logging
 import re
 import threading
@@ -10,14 +11,39 @@ _KEY_VALUE = re.compile(
     r"(?i)(\"?(?:password|passwd|pwd|secret|token)\"?\s*[:=]\s*)(\"[^\"]*\"|'[^']*'|[^\s,;&]+)"
 )
 _lock = threading.Lock()
-_secrets = set()  # type: set[str]
+# 実行中のジョブのパスワードだけを保持する (参照カウント)。ジョブが終われば消す:
+# 利用者のパスワードをサーバのメモリに残し続けないため。
+_secrets = {}  # type: dict[str, int]
 
 
 def register_secret(value):
     # type: (str | None) -> None
     if value and len(value) >= 4:
         with _lock:
-            _secrets.add(value)
+            _secrets[value] = _secrets.get(value, 0) + 1
+
+
+def unregister_secret(value):
+    # type: (str | None) -> None
+    if value and len(value) >= 4:
+        with _lock:
+            left = _secrets.get(value, 0) - 1
+            if left > 0:
+                _secrets[value] = left
+            else:
+                _secrets.pop(value, None)
+
+
+@contextlib.contextmanager
+def secrets(*values):
+    """with secrets(pw1, pw2): の間だけ、ログ等からこれらの値を伏せる。"""
+    for v in values:
+        register_secret(v)
+    try:
+        yield
+    finally:
+        for v in values:
+            unregister_secret(v)
 
 
 def clear_secrets():

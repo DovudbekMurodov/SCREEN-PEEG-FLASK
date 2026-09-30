@@ -226,7 +226,8 @@ def run_engine(engine, csv_bytes, attendance, approver=""):
             json.dump({"attendance_paths": paths}, fh, ensure_ascii=False)
         cmd = [engine.python(), os.path.join(engine.src_dir, "main.py"),
                "--no-pause", "--approver", approver, "--config", cfg]
-        env = dict(os.environ, CHECKSHEET_ROOT=work, PYTHONIOENCODING="utf-8")
+        # TZ: サーバが UTC でも生成日時・ファイル名は日本時間にする
+        env = dict(os.environ, CHECKSHEET_ROOT=work, PYTHONIOENCODING="utf-8", TZ="Asia/Tokyo")
         try:
             # stdin を閉じる: マスタのパスワード入力待ち (getpass) で固まらないように。
             proc = subprocess.run(cmd, capture_output=True, text=True, env=env,

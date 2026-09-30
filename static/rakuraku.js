@@ -107,8 +107,22 @@
     document.body.appendChild(a); a.click();
     setTimeout(function () { URL.revokeObjectURL(url); a.remove(); }, 1500);
   }
+  // レポートは申請内容 (出発地など利用者が入力した文字) を含むため、このサイトと同じ
+  // オリジンでは開かない: sandbox iframe (allow-same-origin なし) に入れて別オリジン扱いにし、
+  // 万一スクリプトが混入していても保存済みのID・パスワード (localStorage) に届かないようにする。
+  function reportHtml(file) {
+    var bin = atob(file.b64), bytes = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return new TextDecoder("utf-8").decode(bytes);
+  }
+  function escAttr(s) { return s.replace(/&/g, "&amp;").replace(/"/g, "&quot;"); }
   function openInTab(file) {
-    var url = URL.createObjectURL(toBlob({ b64: file.b64, mime: "text/html" }));
+    var title = (file.filename || "report").replace(/[<>&"]/g, "");
+    var page = '<!doctype html><html><head><meta charset="utf-8"><title>' + title + '</title>' +
+      '<style>html,body{margin:0;height:100%}iframe{border:0;width:100%;height:100%;display:block}</style></head>' +
+      '<body><iframe sandbox="allow-scripts allow-popups allow-modals allow-downloads" srcdoc="' +
+      escAttr(reportHtml(file)) + '"></iframe></body></html>';
+    var url = URL.createObjectURL(new Blob([page], { type: "text/html" }));
     var a = document.createElement("a");
     a.href = url; a.target = "_blank"; a.rel = "noopener";
     document.body.appendChild(a); a.click(); a.remove();
@@ -158,6 +172,8 @@
         stats.appendChild(tile);
       });
       resultBox.appendChild(stats);
+    } else {
+      resultBox.appendChild(el("div", "rr-result-warn", t("empty", resultBox)));
     }
     resultBox.appendChild(el("h3", null, t("files", resultBox)));
     var files = el("div", "rr-files");
@@ -191,7 +207,10 @@
     resultBox.hidden = false;
   }
 
+  var waitMsg = ""; // 順番待ち中の表示 (最初のステップが動き出したら消す)
   function handleEvent(ev, data) {
+    if (ev === "wait") { waitMsg = data.message || ""; statusText(waitMsg); return; }
+    if (ev === "step") waitMsg = "";
     if (ev === "steps") { if (data.before) insertSteps(data.steps, data.before); else renderSteps(data.steps); }
     else if (ev === "step") setStep(data.key, data.status, data.detail);
     else if (ev === "file") { statusText(t("done")); download(data); }
@@ -211,13 +230,15 @@
     flow.hidden = false;
     flow.classList.remove("rr-has-error");
     flow.querySelector(".rr-steps").innerHTML = "";
+    waitMsg = "";
     if (resultBox) { resultBox.hidden = true; resultBox.innerHTML = ""; }
     setBusy(true);
     var start = Date.now();
     var timer = setInterval(function () {
+      if (finished) return; // 結果/エラー受信後は「完了」表示を上書きしない
       if (!flow.classList.contains("rr-has-error") && !flow.querySelector(".rr-step.rr-failed")) {
         var s = Math.floor((Date.now() - start) / 1000);
-        statusText(t("running") + "  " + t("elapsed").replace("{s}", s));
+        statusText((waitMsg || t("running")) + "  " + t("elapsed").replace("{s}", s));
       }
     }, 500);
     var finished = false;

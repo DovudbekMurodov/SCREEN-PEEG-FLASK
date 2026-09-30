@@ -166,7 +166,8 @@ def _python_executable() -> str:
 
 
 def _run_checksheet(work: str, approver: str = "") -> subprocess.CompletedProcess:
-    env = dict(os.environ, CHECKSHEET_ROOT=work, PYTHONIOENCODING="utf-8")
+    # TZ: サーバが UTC でも生成日時・ファイル名は日本時間にする
+    env = dict(os.environ, CHECKSHEET_ROOT=work, PYTHONIOENCODING="utf-8", TZ="Asia/Tokyo")
     # --approver に空文字を渡すと絞り込みなし (全件対象) になる
     cmd = [_python_executable(), os.path.join(SRC_DIR, "main.py"),
            "--no-pause", "--approver", approver]
@@ -251,10 +252,12 @@ def run():
 
     log = _clean_log((proc.stdout or "") + (proc.stderr or ""), work)
     if proc.returncode != 0:
+        shutil.rmtree(work, ignore_errors=True)  # 失敗時はアップロードされたファイルを残さない
         return _render(error="処理中にエラーが発生しました。", log=log), 500
 
     stamp, files = _result_files(work)
     if not files:
+        shutil.rmtree(work, ignore_errors=True)
         return _render(error="結果ファイルが生成されませんでした。", log=log), 500
 
     return _render(log=log, job_id=job_id, stamp=stamp, files=files,

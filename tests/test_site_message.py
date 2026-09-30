@@ -35,3 +35,22 @@ def test_no_site_message_keeps_plain_text():
 
 def test_account_locked_translated():
     assert "account is locked" in _localize_error(AccountLocked("x", service="seisan"), "en")
+
+
+@pytest.mark.parametrize("enc", ["cp932", "utf-8-sig"])
+def test_csv_validation_never_rejects_long_valid_files(enc):
+    # 以前は先頭4096バイトで切ってデコードしており、多バイト文字の途中で切れると
+    # 正しいCSVでも「エクスポート失敗」になっていた (約4割)。
+    from rakuraku.seisan import _validate_csv
+
+    head = "伝票No,明細No,日付,出発地,到着地\r\n"
+    for pad in range(0, 120):
+        _validate_csv((head + "あ" * pad + "\r\n" + "東京駅,大阪駅,新幹線\r\n" * 400).encode(enc))
+
+
+def test_csv_validation_rejects_html():
+    from rakuraku.errors import ExportFailed
+    from rakuraku.seisan import _validate_csv
+
+    with pytest.raises(ExportFailed):
+        _validate_csv(b"<html><body>error</body></html>")

@@ -7,12 +7,14 @@
 from __future__ import annotations
 
 import base64
+import contextlib
 import io
 import json
 import logging
 import os
 import queue
 import threading
+import time
 import zipfile
 
 from flask import Blueprint, Response, current_app, render_template, request, send_file
@@ -20,8 +22,16 @@ from flask import Blueprint, Response, current_app, render_template, request, se
 from i18n import current_lang, translate
 from rakuraku import redact
 from rakuraku.browser import browser_session, playwright_available
-from rakuraku.errors import SERVICE_NAMES, PlaywrightUnavailable, RakuError
+from rakuraku.errors import (
+    SERVICE_NAMES,
+    BrowserFailed,
+    JobCancelled,
+    PlaywrightUnavailable,
+    RakuError,
+    ServerBusy,
+)
 from rakuraku.kintai import KintaiClient
+from rakuraku.locators import PlaywrightError, set_cancel
 from rakuraku.oneclick import (
     mime_of,
     months_from_expense_csv,
@@ -59,6 +69,48 @@ SLOWMO_MS = int(os.environ.get("RR_SLOWMO_MS", "0") or 0)
 PROXY_URL = os.environ.get("RR_OUTBOUND_PROXY_URL") or None
 KINTAI_MAX_MONTHS = int(os.environ.get("RR_KINTAI_MAX_MONTHS", "3") or 3)
 
+# 同時に動かすブラウザ処理の数。1 GB のサーバでは Chromium 2つでメモリ上限を超えるため既定 1。
+# 空きが無いときは順番待ち (画面に「お待ちください」) し、QUEUE_WAIT_SECONDS を超えたら諦める。
+MAX_CONCURRENT_JOBS = max(1, int(os.environ.get("RR_MAX_CONCURRENT_JOBS", "1") or 1))
+QUEUE_WAIT_SECONDS = int(os.environ.get("RR_QUEUE_WAIT_SECONDS", "900") or 900)
+HEARTBEAT_SECONDS = 15  # 無通信で社内プロキシ等に切られないよう、SSE にコメント行を送る間隔
+WAIT_POLL_SECONDS = 5  # 順番待ち中に「お待ちください」を送り直す間隔
+# 順番待ちできる人数。待つ間も gunicorn のスレッドを1つ使うため、スレッド数より十分少なくし、
+# 超えたらすぐ「混み合っています」を返す (待ちでページ表示まで止まらないように)。
+MAX_WAITING_JOBS = int(os.environ.get("RR_MAX_WAITING_JOBS", "3") or 3)
+# ストリームを使わない旧フォーム送信 (JS無効時) は nginx の 600 秒を超えないよう短く待つ。
+NON_STREAM_WAIT_SECONDS = 60
+_job_slots = threading.BoundedSemaphore(MAX_CONCURRENT_JOBS)
+_waiting = [0]
+_waiting_lock = threading.Lock()
+
+
+@contextlib.contextmanager
+def _job_slot(on_wait=None, max_wait=None):
+    # type: (object, float | None) -> object
+    """ブラウザ処理の実行枠を1つ確保する。待つ間は on_wait() を WAIT_POLL_SECONDS ごとに呼ぶ。"""
+    if not _job_slots.acquire(blocking=False):
+        with _waiting_lock:
+            if _waiting[0] >= MAX_WAITING_JOBS:
+                raise ServerBusy("queue full")
+            _waiting[0] += 1
+        try:
+            deadline = time.monotonic() + (QUEUE_WAIT_SECONDS if max_wait is None else max_wait)
+            while True:
+                if on_wait:
+                    on_wait()
+                if _job_slots.acquire(timeout=WAIT_POLL_SECONDS):
+                    break
+                if time.monotonic() >= deadline:
+                    raise ServerBusy("no free job slot")
+        finally:
+            with _waiting_lock:
+                _waiting[0] -= 1
+    try:
+        yield
+    finally:
+        _job_slots.release()
+
 
 def _localize_error(exc, lang=None):
     # type: (RakuError, str | None) -> str
@@ -80,8 +132,8 @@ def _sse(event, obj):
     return "event: %s\ndata: %s\n\n" % (event, json.dumps(obj, ensure_ascii=False))
 
 
-def _stream(steps, run, lang):
-    # type: (list, object, str) -> Response
+def _stream(steps, run, lang, secrets=()):
+    # type: (list, object, str, tuple) -> Response
     """run(on_step) をワーカースレッドで実行し、ステップ進捗を SSE で流す。サーバに保存しない。
 
     run の戻り値が (filename, bytes, mime) なら最後にファイルを base64 で送る。
@@ -91,23 +143,46 @@ def _stream(steps, run, lang):
     def gen():
         q = queue.Queue()
         holder = {}
+        cancel = threading.Event()  # 接続が切れたら立てる → 次のステップ境界で打ち切り
 
         def on_step(key, status, detail=None):
+            if cancel.is_set():
+                raise JobCancelled("client disconnected")
             q.put(("step", {"key": key, "status": status, "detail": detail}))
 
         on_step.emit = lambda event, data: q.put((event, data))
 
+        def on_wait():
+            if cancel.is_set():
+                raise JobCancelled("client disconnected while waiting")
+            q.put(("wait", {"message": translate("ほかの方の処理が終わるまでお待ちください…", lang)}))
+
         def work():
+            # secrets: このジョブの間だけ、ログ (例外のトレースバック含む) でパスワードを伏せる
+            set_cancel(cancel)  # 長い待ちの途中でも、接続が切れたら打ち切れるように
             try:
-                out = run(on_step)
+                with redact.secrets(*secrets):
+                    _work()
+            finally:
+                set_cancel(None)
+
+        def _work():
+            try:
+                with _job_slot(on_wait):
+                    out = run(on_step)
                 if isinstance(out, dict):
                     q.put((out["event"], out["data"]))
                 else:
                     holder["file"] = out
                     q.put(("done", None))
+            except JobCancelled:
+                log.info("stream cancelled (client disconnected)")
             except RakuError as exc:
                 log.warning("stream failed: %s", getattr(exc, "code", "?"))
                 q.put(("error", {"message": _localize_error(exc, lang), "log": getattr(exc, "log", "") or ""}))
+            except PlaywrightError:
+                log.exception("stream browser error")
+                q.put(("error", {"message": _localize_error(BrowserFailed(), lang), "log": ""}))
             except Exception:  # noqa: BLE001
                 log.exception("stream unexpected error")
                 q.put(("error", translate("自動処理でエラーが発生しました。", lang)))
@@ -115,18 +190,25 @@ def _stream(steps, run, lang):
                 q.put((None, None))
 
         threading.Thread(target=work, daemon=True).start()
-        yield _sse("steps", {"steps": steps})
-        while True:
-            typ, payload = q.get()
-            if typ is None:
-                break
-            if typ == "done":
-                name, data, mime = holder["file"]
-                yield _sse("file", {"filename": name, "mime": mime, "b64": base64.b64encode(data).decode()})
-            elif typ == "error":
-                yield _sse("error", payload if isinstance(payload, dict) else {"message": payload})
-            else:
-                yield _sse(typ, payload)
+        try:
+            yield _sse("steps", {"steps": steps})
+            while True:
+                try:
+                    typ, payload = q.get(timeout=HEARTBEAT_SECONDS)
+                except queue.Empty:
+                    yield ": ping\n\n"
+                    continue
+                if typ is None:
+                    break
+                if typ == "done":
+                    name, data, mime = holder["file"]
+                    yield _sse("file", {"filename": name, "mime": mime, "b64": base64.b64encode(data).decode()})
+                elif typ == "error":
+                    yield _sse("error", payload if isinstance(payload, dict) else {"message": payload})
+                else:
+                    yield _sse(typ, payload)
+        finally:
+            cancel.set()  # 正常終了でも立ててよい (処理はもう終わっている)
 
     return Response(
         gen(),
@@ -164,7 +246,8 @@ def seisan_run():
         return _seisan_error(_localize_error(PlaywrightUnavailable()), 503)
 
     try:
-        with browser_session(headless=HEADLESS, slow_mo_ms=SLOWMO_MS, proxy_url=PROXY_URL) as ctx:
+        with redact.secrets(params.password), _job_slot(max_wait=NON_STREAM_WAIT_SECONDS), \
+                browser_session(headless=HEADLESS, slow_mo_ms=SLOWMO_MS, proxy_url=PROXY_URL) as ctx:
             client = SeisanClient(ctx, SEISAN_BASE_URL, log=lambda m, lvl="info": log.info("%s", m))
             try:
                 name, data = client.download(params)
@@ -173,6 +256,9 @@ def seisan_run():
     except RakuError as exc:
         log.warning("seisan failed: %s", exc.code)
         return _seisan_error(_localize_error(exc), 502)
+    except PlaywrightError:
+        log.exception("seisan browser error")
+        return _seisan_error(_localize_error(BrowserFailed()), 502)
     except Exception:  # noqa: BLE001
         log.exception("seisan unexpected error")
         return _seisan_error(translate("自動処理でエラーが発生しました。", current_lang()), 500)
@@ -210,7 +296,7 @@ def seisan_stream():
                 client.logout()
         return name, data, "text/csv"
 
-    return _stream(steps, run, lang)
+    return _stream(steps, run, lang, secrets=(params.password,))
 
 
 # ---------------------------------------------------------------------- 楽楽勤怠
@@ -234,7 +320,8 @@ def kintai_run():
         return _kintai_error(_localize_error(PlaywrightUnavailable()), 503)
 
     try:
-        with browser_session(headless=HEADLESS, slow_mo_ms=SLOWMO_MS, proxy_url=PROXY_URL) as ctx:
+        with redact.secrets(params.password), _job_slot(max_wait=NON_STREAM_WAIT_SECONDS), \
+                browser_session(headless=HEADLESS, slow_mo_ms=SLOWMO_MS, proxy_url=PROXY_URL) as ctx:
             client = KintaiClient(
                 ctx, KINTAI_LOGIN_URL, KINTAI_ATTENDANCE_URL,
                 log=lambda m, lvl="info": log.info("%s", m),
@@ -246,6 +333,9 @@ def kintai_run():
     except RakuError as exc:
         log.warning("kintai failed: %s", exc.code)
         return _kintai_error(_localize_error(exc), 502)
+    except PlaywrightError:
+        log.exception("kintai browser error")
+        return _kintai_error(_localize_error(BrowserFailed()), 502)
     except Exception:  # noqa: BLE001
         log.exception("kintai unexpected error")
         return _kintai_error(translate("自動処理でエラーが発生しました。", current_lang()), 500)
@@ -305,7 +395,7 @@ def kintai_stream():
                 zf.writestr(name, data)
         return "出勤簿_日別詳細.zip", buf.getvalue(), "application/zip"
 
-    return _stream(steps, run, lang)
+    return _stream(steps, run, lang, secrets=(params.password,))
 
 
 # ---------------------------------------------------------------------- ワンクリック実行
@@ -420,4 +510,4 @@ def oneclick_stream():
             "approver": approver or translate("全員（絞り込みなし）", lang),
         }}
 
-    return _stream(steps, run, lang)
+    return _stream(steps, run, lang, secrets=(sparams.password, kcred.password))

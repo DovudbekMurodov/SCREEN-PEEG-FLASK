@@ -23,7 +23,17 @@ def raku(mock):
     st["empty_months"][:] = []  # テストごとに「データ無しの月」をリセット
     st["seisan_export_mode"] = "ok"
     st["seisan_locked"] = False
+    st["seisan_login_mode"] = "ok"
+    st["kintai_login_mode"] = "ok"
     return mock
+
+
+@pytest.fixture(autouse=True)
+def _jobs_in_tmp(tmp_path, monkeypatch):
+    # テストで作る作業フォルダを本物の jobs/ に残さない
+    import app as appmod
+
+    monkeypatch.setattr(appmod, "JOBS_DIR", str(tmp_path / "jobs"))
 
 
 @pytest.fixture

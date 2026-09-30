@@ -4,6 +4,7 @@ from __future__ import annotations
 import io
 import json
 import threading
+import time
 from datetime import datetime
 from urllib.parse import quote
 from wsgiref.simple_server import make_server
@@ -61,8 +62,14 @@ def create_mock():
                            "kintai_remember": [], "kintai_list_calls": 0,
                            "empty_months": [],  # 出勤簿の行が0件の月 (テストが設定)
                            # 楽楽精算「ファイル出力」の挙動: ok=CSV / alert=該当なしをalert / page=該当なしを画面に表示
+                           #   alert_then_download=お知らせalert後にCSV / confirm=確認ダイアログ後にCSV /
+                           #   popup=別ウィンドウでCSV / slow=8秒後にCSV (途中「作成中」表示) /
+                           #   badcsv=想定外のCSV / emptycsv=空ファイル / validation=入力エラー表示
                            "seisan_export_mode": "ok",
-                           "seisan_locked": False}  # True: ログインで「ロックされています」
+                           "seisan_locked": False,  # True: ログインで「ロックされています」
+                           # ok / expired=パスワード期限切れ / twofactor=追加認証画面 / unknown=想定外の文言
+                           "seisan_login_mode": "ok",
+                           "kintai_login_mode": "ok"}  # ok / locked / expired
     st = app.config["state"]
 
     @app.post("/__mock/forbidden")
@@ -95,12 +102,24 @@ f.appendChild(a);f.appendChild(b);document.body.appendChild(f);f.submit();}
         if st["seisan_locked"]:
             return ("<html><body><div class='error'>このアカウントはロックされています。"
                     "管理者にお問い合わせください。</div></body></html>"), 200
+        mode = st["seisan_login_mode"]
+        if mode == "expired":
+            return "<html><body><h1>パスワードの有効期限が切れています</h1><input type=password></body></html>", 200
+        if mode == "twofactor":
+            return redirect("/%s/twofactor" % TENANT, code=303)
+        if mode == "unknown":  # 想定外の文言で、ログイン画面のまま
+            return seisan_login_page().replace(
+                '<div id="d_login_input">', '<div class="errorMessage">認証できませんでした。</div><div id="d_login_input">')
         if request.form.get("loginId") == SEISAN_LOGIN_ID and request.form.get("password") == SEISAN_PASSWORD:
             st["seisan_logins"] += 1
             resp = redirect("/%s/sapTopPage/mainView" % TENANT, code=303)
             resp.set_cookie("seisan", "1")
             return resp
         return "<html><body><div class='error'>ログインIDまたはパスワードが正しくありません</div></body></html>", 200
+
+    @app.get("/%s/twofactor" % TENANT)
+    def seisan_twofactor():
+        return "<html><body><h1>ワンタイムパスワードを入力してください</h1><input name=otp></body></html>"
 
     @app.get("/%s/sapTopPage/mainView" % TENANT)
     def seisan_top():
@@ -118,8 +137,13 @@ f.appendChild(a);f.appendChild(b);document.body.appendChild(f);f.submit();}
     @app.get("/%s/sapDcsvoutJiBumonDownload/output" % TENANT)
     def seisan_output():
         # 実サイト相当: 該当伝票が無いと同じ画面を再表示してエラー文言を出す
-        if st["seisan_export_mode"] == "page":
+        mode = st["seisan_export_mode"]
+        if mode == "page":
             return _seisan_export_page('<div class="errorMessage">出力対象のデータが存在しません。</div>')
+        if mode == "validation":
+            return _seisan_export_page('<div class="errorMessage">申請日の日付が正しくありません。</div>')
+        if mode == "slow":
+            time.sleep(8)
         return redirect("/%s/sapDcsvoutJiBumonDownload/download" % TENANT, code=303)
 
     def _seisan_export_page(error=""):
@@ -134,10 +158,16 @@ f.appendChild(a);f.appendChild(b);document.body.appendChild(f);f.submit();}
         )
         dates = lambda: "".join('<input class="positiveIntTextBox imeOff d_widthTxt4" type="text">' for _ in range(6))
         mode = st["seisan_export_mode"]
-        onclick = ("alert('出力対象のデータが存在しません。')" if mode == "alert"
-                   else "location.href='/%s/sapDcsvoutJiBumonDownload/output'" % TENANT)
+        go = "location.href='/%s/sapDcsvoutJiBumonDownload/output'" % TENANT
+        onclick = {
+            "alert": "alert('出力対象のデータが存在しません。')",
+            "alert_then_download": "alert('ファイル出力を開始します。');" + go,
+            "confirm": "if(confirm('ファイルを出力します。よろしいですか？')){%s}" % go,
+            "popup": "window.open('/%s/sapDcsvoutJiBumonDownload/download')" % TENANT,
+            "slow": "document.getElementById('msg').textContent='ファイルを作成しています…';" + go,
+        }.get(mode, go)
         return """<html><body><h1>伝票データ出力【自部門】</h1>%s
-<p class="message">※ 申請日を指定しない場合、期間の制限はありません。</p>
+<p class="message">※ 申請日を指定しない場合、期間の制限はありません。</p><div id="msg" class="message"></div>
 <div id="d_master_top">
 <select class="szb-select-small-auto"><option selected>出張精算(MEBA)（出張精算）</option><option>経費精算</option></select>
 <label><input type="checkbox" id="komokuOutputFlag_1">項目名を出力する</label>
@@ -150,8 +180,10 @@ f.appendChild(a);f.appendChild(b);document.body.appendChild(f);f.submit();}
     @app.get("/%s/sapDcsvoutJiBumonDownload/download" % TENANT)
     def seisan_download():
         name = "出張精算_%s.csv" % datetime.now().strftime("%Y%m%d_%H%M%S")
+        body = {"badcsv": "<html>error</html>".encode("cp932"), "emptycsv": b""}.get(
+            st["seisan_export_mode"], None)
         return Response(
-            _csv_bytes(), mimetype="text/csv",
+            _csv_bytes() if body is None else body, mimetype="text/csv",
             headers={"Content-Disposition": _cd(name, "seisan.csv")},
         )
 
@@ -169,6 +201,10 @@ f.appendChild(a);f.appendChild(b);document.body.appendChild(f);f.submit();}
     @app.post("/app/login.authenticate")
     def kintai_login():
         f = request.form
+        if st["kintai_login_mode"] == "locked":
+            return "<html><body><div class='text-error'>アカウントがロックされています</div></body></html>", 200
+        if st["kintai_login_mode"] == "expired":
+            return "<html><body><h1>パスワードの有効期限が切れています</h1></body></html>", 200
         if f.get("customer_id") == KINTAI_COMPANY and f.get("login_id") == KINTAI_LOGIN_ID and f.get("password") == KINTAI_PASSWORD:
             st["kintai_logins"] += 1
             st["kintai_remember"].append(bool(f.get("remember")))

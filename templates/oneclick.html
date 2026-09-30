@@ -9,6 +9,9 @@
     </header>
     <div class="card">
       {% if error %}<div class="error">{{ error }}</div>{% endif %}
+      {# 進捗・結果の表示に JS が必須 (無効だと生のデータが表示されるため、実行ボタンを隠す) #}
+      <noscript><div class="error">{{ _("この画面を使うにはJavaScriptを有効にしてください。") }}</div>
+        <style>#rr-submit{display:none}</style></noscript>
       <div class="note">{{ _("認証情報はこの端末のブラウザにのみ保存されます。共有PCではご注意ください。") }}</div>
 
       {# 認証情報は /seisan・/kintai 画面と同じ保存先 (data-rr-ns) を使うので、どちらで保存しても共有される #}
@@ -131,6 +134,7 @@
            data-t-open="{{ _('HTMLレポートを開く') }}"
            data-t-sources="{{ _('取得した元データ') }}"
            data-t-log="{{ _('実行ログを表示') }}"
+           data-t-empty="{{ _('チェック対象の伝票はありませんでした（楽楽精算のCSVが0件）。') }}"
            data-t-skipped="{{ _('出勤簿データが無くスキップした月：{months}') }}"
            data-t-dropped="{{ _('対象月が多いため取得しなかった月：{months}（該当する申請は未確認になります）') }}"></div>
 

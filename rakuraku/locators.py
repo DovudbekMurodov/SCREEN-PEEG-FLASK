@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import re
+import threading
 import time
 import unicodedata
 
@@ -11,7 +12,23 @@ except ImportError:  # playwright 未インストール (無料プラン等) で
     class PlaywrightError(Exception):  # type: ignore[no-redef]
         pass
 
-from rakuraku.errors import ForbiddenActionBlocked, SelectorNotFound
+from rakuraku.errors import ForbiddenActionBlocked, JobCancelled, SelectorNotFound
+
+# 接続が切れたジョブを、長い待ち (ダウンロード待ち等) の途中でも打ち切るための合図。
+# ジョブを動かすスレッドごとに set_cancel(event) で設定し、待ちループで check_cancel() する。
+_local = threading.local()
+
+
+def set_cancel(event):
+    # type: (object) -> None
+    _local.cancel = event
+
+
+def check_cancel():
+    # type: () -> None
+    ev = getattr(_local, "cancel", None)
+    if ev is not None and ev.is_set():
+        raise JobCancelled("client disconnected")
 
 # 楽楽勤怠 出勤簿管理で Excel アイコンと同じ枠にある操作系ボタン。絶対に押さない。
 FORBIDDEN_CLICK = re.compile(r"次の承認者へ|最終承認|差し?戻し|否認|取下げ|取り下げ|削除|承認する")
@@ -36,6 +53,7 @@ def resolve(scope, candidates, timeout_ms=10_000, service=None, name="element", 
     deadline = time.monotonic() + timeout_ms / 1000.0
     page = scope if hasattr(scope, "wait_for_timeout") else scope.page
     while True:
+        check_cancel()
         for make in candidates:
             try:
                 loc = make(scope)
@@ -66,6 +84,7 @@ def wait_for_any(page, conditions, timeout_ms):
     """conditions は {key: () -> bool}。最初に真になった key を返す。"""
     deadline = time.monotonic() + timeout_ms / 1000.0
     while True:
+        check_cancel()
         for key, pred in conditions.items():
             try:
                 if pred():

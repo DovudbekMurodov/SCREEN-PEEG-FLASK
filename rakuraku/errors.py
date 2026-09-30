@@ -80,6 +80,23 @@ class NoDataFound(RakuError):
     user_message = "対象データがありませんでした。条件をご確認ください。"
 
 
+class BrowserFailed(RakuError):
+    # ブラウザ自体の異常 (途中で閉じた・メモリ不足・通信断など) で、楽楽側の画面の問題ではないもの。
+    code = "BROWSER_FAILED"
+    user_message = "自動操作中にブラウザで問題が発生しました。時間をおいて再度お試しください。"
+
+
+class ServerBusy(RakuError):
+    code = "SERVER_BUSY"
+    user_message = "現在ほかの方の処理が続いているため、実行できませんでした。しばらくしてから再度お試しください。"
+
+
+class JobCancelled(RakuError):
+    # 画面を閉じた等で接続が切れたとき、次のステップ境界で処理を打ち切る (利用者には届かない)。
+    code = "CANCELLED"
+    user_message = "処理を中止しました。"
+
+
 class PlaywrightUnavailable(RakuError):
     code = "PLAYWRIGHT_UNAVAILABLE"
     user_message = (

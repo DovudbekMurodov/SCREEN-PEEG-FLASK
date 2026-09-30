@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import calendar
 import datetime as _dt
+import unicodedata
 from dataclasses import dataclass, field
 
 try:
@@ -74,10 +75,28 @@ class KintaiParams:
     months: list = field(default_factory=list)  # type: list[str]
 
 
+def _first(form, key):
+    # type: (dict, str) -> str
+    value = form.get(key)
+    if isinstance(value, (list, tuple)):
+        value = value[0] if value else ""
+    return value or ""
+
+
 def _req(form, key, message):
     # type: (dict, str, str) -> str
-    value = (form.get(key) or "").strip()
+    """ID類: 全角英数字 (ＰＥＥＧ など) は半角にし、前後の空白を除く。"""
+    value = unicodedata.normalize("NFKC", _first(form, key)).strip()
     if not value:
+        raise ParamError(message)
+    return value
+
+
+def _req_secret(form, key, message):
+    # type: (dict, str, str) -> str
+    """パスワード: 前後の空白もパスワードの一部なので、そのまま使う (空だけ弾く)。"""
+    value = _first(form, key)
+    if not value.strip():
         raise ParamError(message)
     return value
 
@@ -86,11 +105,12 @@ def parse_seisan(form, today=None):
     # type: (dict, _dt.date | None) -> SeisanParams
     today = today or today_jst()
     login_id = _req(form, "login_id", "ログインIDを入力してください。")
-    password = _req(form, "password", "パスワードを入力してください。")
-    scope = (form.get("scope") or "自部門").strip()
+    password = _req_secret(form, "password", "パスワードを入力してください。")
+    scope = _first(form, "scope").strip() or "自部門"
     if scope not in SCOPES:
         raise ParamError("部門の指定が不正です。")
-    category = (form.get("category") or "出張精算(MEBA)").strip()
+    # 空白だけの指定は既定に戻す (空文字は「どの種類にも一致」扱いになり、別の種類を出力してしまうため)
+    category = _first(form, "category").strip() or "出張精算(MEBA)"
 
     default_from, default_to = default_seisan_range(today)
     applied_from = _parse_date(form.get("applied_from"), default_from)
@@ -99,7 +119,7 @@ def parse_seisan(form, today=None):
         raise ParamError("申請日の開始日は終了日以前にしてください。")
     if applied_to > today:
         raise ParamError("申請日の終了日に未来の日付は指定できません。")
-    if (applied_to - applied_from).days > MAX_RANGE_DAYS:
+    if (applied_to - applied_from).days + 1 > MAX_RANGE_DAYS:  # 開始日・終了日を含めて数える
         raise ParamError("申請日の範囲は{n}日以内にしてください。".format(n=MAX_RANGE_DAYS))
 
     statuses = [s for s in _status_list(form) if s in STATUS_ALL]
@@ -113,8 +133,10 @@ def parse_kintai(form, today=None, max_months=3):
     today = today or today_jst()
     company = _req(form, "company_code", "お客様IDを入力してください。")
     login_id = _req(form, "login_id", "ログインIDを入力してください。")
-    password = _req(form, "password", "パスワードを入力してください。")
-    months = [m.strip() for m in _multi(form, "months") if _valid_month(m.strip())]
+    password = _req_secret(form, "password", "パスワードを入力してください。")
+    this_month = year_month(today)
+    months = [m.strip() for m in _multi(form, "months")
+              if _valid_month(m.strip()) and m.strip() <= this_month]  # 未来の月は対象外
     if not months:
         months = default_kintai_months(today)
     # 重複除去 + 新しい順、上限まで
