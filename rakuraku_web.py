@@ -65,9 +65,12 @@ def _localize_error(exc, lang=None):
     lang = lang or current_lang()
     template = getattr(exc, "template", None) or getattr(exc, "user_message", "")
     text = translate(template, lang)
+    name = SERVICE_NAMES.get(exc.service) if exc.service else "楽楽精算・楽楽勤怠"
     if "{service}" in text:
-        name = SERVICE_NAMES.get(exc.service) if exc.service else "楽楽精算・楽楽勤怠"
         text = text.format(service=name)
+    shown = getattr(exc, "site_message", "")
+    if shown:  # 楽楽側の実際の表示を添える (IDとパスワードの誤りか等を画面で判断できるように)
+        text += translate("（{service}の表示：「{msg}」）", lang).format(service=name, msg=shown)
     return text
 
 

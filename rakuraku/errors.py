@@ -8,10 +8,13 @@ class RakuError(Exception):
     code = "RAKU_ERROR"
     user_message = "自動処理でエラーが発生しました。"
 
-    def __init__(self, detail="", service=None, user_message=None):
-        # type: (str, str | None, str | None) -> None
+    def __init__(self, detail="", service=None, user_message=None, site_message=""):
+        # type: (str, str | None, str | None, str) -> None
         self.detail = detail
         self.service = service
+        # 楽楽側の画面に出た文言 (例: 「パスワードが正しくありません」)。利用者にそのまま見せ、
+        # 「IDとパスワードの誤りか、ツールの不具合か」を画面だけで切り分けられるようにする。
+        self.site_message = site_message or ""
         # 翻訳用に未加工テンプレート ({service} を含む) を保持する。
         self.template = user_message or type(self).user_message
         if user_message:
@@ -25,6 +28,11 @@ class RakuError(Exception):
 class LoginFailed(RakuError):
     code = "LOGIN_FAILED"
     user_message = "{service}にログインできませんでした。IDとパスワードをご確認ください。"
+
+
+class AccountLocked(RakuError):
+    code = "ACCOUNT_LOCKED"
+    user_message = "{service}のアカウントがロックされています。{service}の管理者にロック解除を依頼してください。"
 
 
 class PasswordExpired(RakuError):
@@ -84,7 +92,7 @@ class CheckSheetFailed(RakuError):
     code = "CHECKSHEET_FAILED"
     user_message = "チェックシートの作成中にエラーが発生しました。"
 
-    def __init__(self, detail="", service=None, user_message=None, log=""):
-        # type: (str, str | None, str | None, str) -> None
+    def __init__(self, detail="", service=None, user_message=None, log="", site_message=""):
+        # type: (str, str | None, str | None, str, str) -> None
         self.log = log  # 画面の「実行ログ」に出す (サーバ内部のパスは除去済み)
-        super().__init__(detail, service=service, user_message=user_message)
+        super().__init__(detail, service=service, user_message=user_message, site_message=site_message)

@@ -167,3 +167,51 @@ def select_option_fuzzy(select, wanted):
                 select.select_option(label=label)
             return label.strip()
     raise SelectorNotFound("option containing %r not found; options=%s" % (wanted, labels))
+
+
+# 画面に出ているエラー/お知らせの文言を拾う候補。楽楽側の実際の表示を利用者に見せるために使う。
+MESSAGE_CSS = (
+    "[role=alert], .error, .errors, .errorMessage, .errMsg, .text-error, "
+    "[class*='error'], [class*='Error'], [class*='alert'], [class*='warn'], [class*='message'], [class*='Message']"
+)
+# 新しく出た文言のうち「失敗・該当なし」を示すもの (「処理中…」などの一時表示は除く)
+ERRORISH = re.compile(
+    r"エラー|できません|ありません|存在しません|見つかりません|失敗|入力してください|選択してください"
+    r"|正しくありません|誤り|超え|ロック"
+)
+
+_MESSAGES_JS = """(css) => {
+  const out = [];
+  for (const el of document.querySelectorAll(css)) {
+    if (!el.getClientRects().length) continue;
+    const st = getComputedStyle(el);
+    if (st.visibility === 'hidden' || st.display === 'none') continue;
+    const t = (el.innerText || '').replace(/\\s+/g, ' ').trim();
+    if (!t || t.length > 200 || out.includes(t)) continue;
+    out.push(t);
+    if (out.length >= 20) break;
+  }
+  return out;
+}"""
+
+
+def visible_messages(page, css=MESSAGE_CSS):
+    # type: (object, str) -> list
+    """表示中のメッセージ文言 (空白を詰めた短い文字列) のリスト。遷移中などで取れなければ []。"""
+    try:
+        return list(page.evaluate(_MESSAGES_JS, css) or [])
+    except Exception:  # noqa: BLE001
+        return []
+
+
+def first_text(scope, candidates):
+    # type: (object, list) -> str
+    """候補のうち最初に見つかった可視要素の文言 (空白を詰める)。無ければ ""。"""
+    for make in candidates:
+        try:
+            loc = make(scope).filter(visible=True)
+            if loc.count() >= 1:
+                return re.sub(r"\s+", " ", loc.first.inner_text(timeout=2000)).strip()[:200]
+        except PlaywrightError:
+            continue
+    return ""

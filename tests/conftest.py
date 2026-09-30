@@ -21,6 +21,8 @@ def raku(mock):
     st["kintai_remember"][:] = []
     st["kintai_list_calls"] = 0
     st["empty_months"][:] = []  # テストごとに「データ無しの月」をリセット
+    st["seisan_export_mode"] = "ok"
+    st["seisan_locked"] = False
     return mock
 
 

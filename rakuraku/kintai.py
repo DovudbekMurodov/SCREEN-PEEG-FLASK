@@ -13,6 +13,7 @@ except ImportError:  # playwright 未インストールでも import 可能に�
 
 from rakuraku import selectors as sel
 from rakuraku.errors import (
+    AccountLocked,
     AdditionalAuthRequired,
     DownloadTimeout,
     ExportFailed,
@@ -23,8 +24,17 @@ from rakuraku.errors import (
     SelectorNotFound,
     SiteUnavailable,
 )
-from rakuraku.locators import exists, resolve, safe_click, set_checkbox, wait_for_any
-from rakuraku.redact import register_secret
+from rakuraku.locators import (
+    ERRORISH,
+    exists,
+    first_text,
+    resolve,
+    safe_click,
+    set_checkbox,
+    visible_messages,
+    wait_for_any,
+)
+from rakuraku.redact import redact, register_secret
 
 SERVICE = "kintai"
 
@@ -246,10 +256,14 @@ class KintaiClient:
             )
         except TimeoutError:
             if page.url == login_url and exists(page, sel.kintai_password(page)):
-                raise LoginFailed("login form still shown", service=SERVICE)
+                shown = next((m for m in visible_messages(page) if ERRORISH.search(m)), "")
+                raise LoginFailed("login form still shown", service=SERVICE, site_message=redact(shown))
             raise AdditionalAuthRequired("unexpected page: %s" % page.url, service=SERVICE)
         if outcome == "error":
-            raise LoginFailed("login rejected", service=SERVICE)
+            shown = redact(first_text(page, sel.kintai_login_error(page)))
+            if "ロック" in shown:
+                raise AccountLocked("account locked", service=SERVICE, site_message=shown)
+            raise LoginFailed("login rejected", service=SERVICE, site_message=shown)
         if outcome == "expired":
             raise PasswordExpired("password expired", service=SERVICE)
 

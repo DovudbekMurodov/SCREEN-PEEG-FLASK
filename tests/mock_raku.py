@@ -59,7 +59,10 @@ def create_mock():
     app = Flask("mock_raku")
     app.config["state"] = {"forbidden": [], "seisan_logins": 0, "kintai_logins": 0,
                            "kintai_remember": [], "kintai_list_calls": 0,
-                           "empty_months": []}  # 出勤簿の行が0件の月 (テストが設定)
+                           "empty_months": [],  # 出勤簿の行が0件の月 (テストが設定)
+                           # 楽楽精算「ファイル出力」の挙動: ok=CSV / alert=該当なしをalert / page=該当なしを画面に表示
+                           "seisan_export_mode": "ok",
+                           "seisan_locked": False}  # True: ログインで「ロックされています」
     st = app.config["state"]
 
     @app.post("/__mock/forbidden")
@@ -89,6 +92,9 @@ f.appendChild(a);f.appendChild(b);document.body.appendChild(f);f.submit();}
 
     @app.post("/%s/login" % TENANT)
     def seisan_login():
+        if st["seisan_locked"]:
+            return ("<html><body><div class='error'>このアカウントはロックされています。"
+                    "管理者にお問い合わせください。</div></body></html>"), 200
         if request.form.get("loginId") == SEISAN_LOGIN_ID and request.form.get("password") == SEISAN_PASSWORD:
             st["seisan_logins"] += 1
             resp = redirect("/%s/sapTopPage/mainView" % TENANT, code=303)
@@ -107,6 +113,16 @@ f.appendChild(a);f.appendChild(b);document.body.appendChild(f);f.submit();}
     def seisan_export():
         if request.cookies.get("seisan") != "1":
             return redirect("/%s/ssooff" % TENANT, code=303)
+        return _seisan_export_page()
+
+    @app.get("/%s/sapDcsvoutJiBumonDownload/output" % TENANT)
+    def seisan_output():
+        # 実サイト相当: 該当伝票が無いと同じ画面を再表示してエラー文言を出す
+        if st["seisan_export_mode"] == "page":
+            return _seisan_export_page('<div class="errorMessage">出力対象のデータが存在しません。</div>')
+        return redirect("/%s/sapDcsvoutJiBumonDownload/download" % TENANT, code=303)
+
+    def _seisan_export_page(error=""):
         statuses = ["承認依頼中", "仮払金精算待", "支払確定待", "支払確定済", "差戻し", "取下げ", "否認", "対象外"]
         ids = {"承認依頼中": "denpyoStatus_0", "仮払金精算待": "denpyoStatus_-2", "支払確定待": "denpyoStatus_-1",
                "支払確定済": "denpyoStatus_-9", "差戻し": "denpyoStatus_1", "取下げ": "denpyoStatus_2",
@@ -117,15 +133,19 @@ f.appendChild(a);f.appendChild(b);document.body.appendChild(f);f.submit();}
             for s in statuses
         )
         dates = lambda: "".join('<input class="positiveIntTextBox imeOff d_widthTxt4" type="text">' for _ in range(6))
-        return """<html><body><h1>伝票データ出力【自部門】</h1>
+        mode = st["seisan_export_mode"]
+        onclick = ("alert('出力対象のデータが存在しません。')" if mode == "alert"
+                   else "location.href='/%s/sapDcsvoutJiBumonDownload/output'" % TENANT)
+        return """<html><body><h1>伝票データ出力【自部門】</h1>%s
+<p class="message">※ 申請日を指定しない場合、期間の制限はありません。</p>
 <div id="d_master_top">
 <select class="szb-select-small-auto"><option selected>出張精算(MEBA)（出張精算）</option><option>経費精算</option></select>
 <label><input type="checkbox" id="komokuOutputFlag_1">項目名を出力する</label>
 <div>申請日 %s</div>
 <div>承認完了日 %s</div>
 <div>伝票状態 %s</div>
-<button class="imgButton output" onclick="location.href='/%s/sapDcsvoutJiBumonDownload/download'">ファイル出力</button>
-</div></body></html>""" % (dates(), dates(), checks, TENANT)
+<button class="imgButton output" onclick="%s">ファイル出力</button>
+</div></body></html>""" % (error, dates(), dates(), checks, onclick)
 
     @app.get("/%s/sapDcsvoutJiBumonDownload/download" % TENANT)
     def seisan_download():

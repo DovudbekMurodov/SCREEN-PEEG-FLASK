@@ -139,3 +139,59 @@ def test_oneclick_stream_all_months_empty_is_error(client, wired, monkeypatch):
     wired.state["empty_months"].extend(["2026-09", "2026-08"])
     events = sse_events(client.post("/oneclick/stream", data=ONECLICK_FORM).get_data(as_text=True))
     assert events[-1][0] == "error" and "result" not in [e for e, _ in events]
+
+
+# ---------------------------------------------------------------- 楽楽精算: 該当伝票なし / ログイン失敗の表示
+def _seisan_stream(client, **extra):
+    import time
+
+    form = {"login_id": "AZ999999", "password": "seisan-pass", "statuses": "承認依頼中"}
+    form.update(extra)
+    started = time.monotonic()
+    body = client.post("/seisan/stream", data=form).get_data(as_text=True)
+    return body, time.monotonic() - started
+
+
+@pytest.mark.parametrize("mode", ["alert", "page"])
+def test_seisan_no_vouchers_is_reported_quickly_with_site_text(client, wired, mode):
+    # 実サイトで起きた事象: 該当伝票が無いと楽楽精算はメッセージを出すだけでCSVを出さない。
+    # 以前はそれを見落として 180 秒待ち「時間内に完了しませんでした」になっていた。
+    wired.state["seisan_export_mode"] = mode
+    body, elapsed = _seisan_stream(client)
+    assert "event: file" not in body
+    assert "該当する伝票がありませんでした" in body
+    assert "楽楽精算の表示：「出力対象のデータが存在しません。」" in body
+    assert "時間内に完了しませんでした" not in body
+    assert elapsed < 60
+
+
+def test_seisan_no_vouchers_message_localized(client, wired):
+    wired.state["seisan_export_mode"] = "alert"
+    client.get("/lang/en")
+    body, _ = _seisan_stream(client)
+    assert "has no vouchers that match" in body and "楽楽精算 showed:" in body
+
+
+def test_seisan_login_rejected_shows_site_text(client, wired):
+    body, _ = _seisan_stream(client, password="nope")
+    assert "IDとパスワードをご確認ください" in body
+    assert "楽楽精算の表示：「ログインIDまたはパスワードが正しくありません」" in body
+
+
+def test_seisan_locked_account_is_its_own_error(client, wired):
+    wired.state["seisan_locked"] = True
+    body, _ = _seisan_stream(client)
+    assert "アカウントがロックされています" in body
+    assert "IDとパスワードをご確認ください" not in body
+    assert "このアカウントはロックされています" in body
+
+
+def test_oneclick_stream_no_vouchers_stops_with_clear_message(client, wired, monkeypatch):
+    monkeypatch.setattr(rakuraku_web, "today_jst", lambda: __import__("datetime").date(2026, 9, 28))
+    from tests.test_oneclick import sse_events
+
+    wired.state["seisan_export_mode"] = "page"
+    events = sse_events(client.post("/oneclick/stream", data=ONECLICK_FORM).get_data(as_text=True))
+    assert events[-1][0] == "error"
+    assert "該当する伝票がありませんでした" in events[-1][1]["message"]
+    assert wired.state["kintai_logins"] == 0  # 精算で止まり、勤怠には進まない

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import re
 import tempfile
 
 try:
@@ -15,6 +16,7 @@ except ImportError:  # playwright 未インストールでも import 可能に�
 
 from rakuraku import selectors as sel
 from rakuraku.errors import (
+    AccountLocked,
     AdditionalAuthRequired,
     DownloadTimeout,
     ExportFailed,
@@ -25,17 +27,24 @@ from rakuraku.errors import (
     SiteUnavailable,
 )
 from rakuraku.locators import (
+    ERRORISH,
     exists,
+    first_text,
     nfkc,
     resolve,
     safe_click,
     select_option_fuzzy,
     set_checkbox as _set_checkbox,
+    visible_messages,
     wait_for_any,
 )
-from rakuraku.redact import register_secret
+from rakuraku.redact import redact, register_secret
 
 SERVICE = "seisan"
+
+# 「ファイル出力」後に楽楽側のメッセージ (該当なし等) が出たら、念のためこの秒数だけ
+# ダウンロード開始を待ってから結果を判定する (お知らせだけでダウンロードは続く場合に備える)。
+SIGNAL_GRACE_MS = 5000
 
 
 def _noop(*_a, **_k):
@@ -50,6 +59,7 @@ class SeisanClient:
         self.nav_timeout_ms = nav_timeout_ms
         self.download_timeout_ms = download_timeout_ms
         self.page = None
+        self.dialogs = []  # [(type, message)] ページが出したダイアログ (alert/confirm)
 
     STEPS = [("login", "楽楽精算にログイン"), ("export", "抽出条件を設定"), ("download", "CSVをダウンロード")]
 
@@ -113,10 +123,14 @@ class SeisanClient:
             )
         except TimeoutError:
             if page.url == login_url and exists(page, sel.seisan_password(page)):
-                raise LoginFailed("login form still shown", service=SERVICE)
+                raise LoginFailed("login form still shown", service=SERVICE,
+                                  site_message=_errorish(visible_messages(page)))
             raise AdditionalAuthRequired("unexpected page: %s" % page.url, service=SERVICE)
         if outcome == "error":
-            raise LoginFailed("login rejected", service=SERVICE)
+            shown = redact(first_text(page, sel.seisan_login_error(page)))
+            if "ロック" in shown:
+                raise AccountLocked("account locked", service=SERVICE, site_message=shown)
+            raise LoginFailed("login rejected", service=SERVICE, site_message=shown)
         if outcome == "expired":
             raise PasswordExpired("password expired", service=SERVICE)
         self.log("楽楽精算にログインしました。")
@@ -220,23 +234,60 @@ class SeisanClient:
         def _on_download(d):
             downloads.append(d)
 
+        def _on_page(p):  # 別ウィンドウでダウンロードされる設定にも対応
+            p.on("download", _on_download)
+
+        # クリック前の表示を控え、クリック後に「新しく出た」文言だけを判定に使う
+        # (画面に常時ある説明文を「該当なし」と誤判定しないため)。
+        before_msgs = set(visible_messages(page))
+        before_nodata = self._no_data_lines(page)
+        mark = len(self.dialogs)
+
+        def signal():
+            # 楽楽側が出した「該当なし/エラー」の文言。無ければ ""。
+            for typ, msg in self.dialogs[mark:]:
+                if typ != "confirm" and msg:
+                    return msg
+            new_nodata = self._no_data_lines(page) - before_nodata
+            if new_nodata:
+                return sorted(new_nodata)[0]
+            return _errorish(m for m in visible_messages(page) if m not in before_msgs)
+
         page.on("download", _on_download)
+        self.context.on("page", _on_page)
         try:
             safe_click(button, service=SERVICE)
-            outcome = wait_for_any(
-                page,
-                {"download": lambda: bool(downloads), "no_data": lambda: self._no_data(page)},
-                timeout_ms=self.download_timeout_ms,
-            )
-        except TimeoutError:
-            raise DownloadTimeout("CSV download did not start", service=SERVICE)
-        finally:
             try:
-                page.remove_listener("download", _on_download)
-            except Exception:  # noqa: BLE001
-                pass
-        if outcome == "no_data" and not downloads:
-            raise NoDataFound("no vouchers matched", service=SERVICE)
+                outcome = wait_for_any(
+                    page,
+                    {"download": lambda: bool(downloads), "signal": lambda: bool(signal())},
+                    timeout_ms=self.download_timeout_ms,
+                )
+            except TimeoutError:
+                shown = _errorish(m for m in visible_messages(page) if m not in before_msgs)
+                raise DownloadTimeout(
+                    "CSV download did not start", service=SERVICE, site_message=redact(shown),
+                    user_message="楽楽精算からCSVが出力されませんでした。指定した条件（申請日・伝票状態）に"
+                                 "該当する伝票がない可能性があります。条件を変えて再度お試しください。",
+                )
+            if outcome == "signal" and not downloads:
+                shown = redact(signal())
+                try:
+                    wait_for_any(page, {"download": lambda: bool(downloads)}, timeout_ms=SIGNAL_GRACE_MS)
+                except TimeoutError:
+                    if sel.SEISAN_NO_DATA.search(shown):
+                        raise NoDataFound(
+                            "no vouchers matched", service=SERVICE, site_message=shown,
+                            user_message="楽楽精算に、指定した条件（申請日・伝票状態）に該当する伝票がありませんでした。"
+                                         "条件を変えて再度お試しください。",
+                        )
+                    raise ExportFailed("site message: %s" % shown, service=SERVICE, site_message=shown)
+        finally:
+            for target, event, fn in ((page, "download", _on_download), (self.context, "page", _on_page)):
+                try:
+                    target.remove_listener(event, fn)
+                except Exception:  # noqa: BLE001
+                    pass
         download = downloads[0]
         if download.failure():
             raise ExportFailed("download failed: %s" % download.failure(), service=SERVICE)
@@ -252,6 +303,10 @@ class SeisanClient:
 
         def handle(dialog):
             try:
+                self.dialogs.append((dialog.type, re.sub(r"\s+", " ", dialog.message or "").strip()[:200]))
+            except Exception:  # noqa: BLE001
+                pass
+            try:
                 if dialog.type == "confirm" and _re.search(r"出力|ダウンロード|よろしい", dialog.message):
                     dialog.accept()
                 else:
@@ -261,12 +316,22 @@ class SeisanClient:
 
         page.on("dialog", handle)
 
-    def _no_data(self, page):
+    def _no_data_lines(self, page):
+        # type: (object) -> set
         try:
             body = page.locator("body").inner_text(timeout=1500)
         except PlaywrightError:
-            return False
-        return bool(sel.SEISAN_NO_DATA.search(body or ""))
+            return set()
+        return {line.strip()[:200] for line in (body or "").splitlines() if sel.SEISAN_NO_DATA.search(line)}
+
+
+def _errorish(texts):
+    # type: (object) -> str
+    """文言のうち「失敗・該当なし」を示す最初のもの。無ければ ""。"""
+    for text in texts:
+        if ERRORISH.search(text or ""):
+            return text
+    return ""
 
 
 def _any_export_link(page):
